@@ -68,21 +68,31 @@ class Plugin(indigo.PluginBase):
             self.logger.debug(f"Invalid! {error_dict}")
             return (False, values_dict, error_dict)
 
+    def espChangeCallback(self, state):
+        self.logger.debug("espChangeCallback")
+        self.logger.debug(f"state: {state}")
+        
     def deviceStartComm(self, dev):
         self.logger.debug("deviceStartComm()")
-        # Called when communication with the hardware should be established.
-        # Here would be a good place to poll out the current states from the
-        # thermostat. If periodic polling of the thermostat is needed (that
-        # is, it doesn't broadcast changes back to the plugin somehow), then
-        # consider adding that to runConcurrentThread() above.
-        #self._refresh_states_from_hardware(dev, True, True)
-        pass
+        self.loop.call_soon_threadsafe(self.aStartComm, self, dev)
+
+    async def aStartComm(self, dev):
+        self.logger.debug("aStartComm()")
+        self.api = aiohomeapi.APIClient(dev.address, int(dev.port), dev.password, dev.psk)
+        await api.connect(login=True)
+        await api.subscribe_states(self.esp_change_callback)
+        
+    
 
     def deviceStopComm(self, dev):
         self.logger.debug("deviceStopComm()")
         # Called when communication with the hardware should be shutdown.
-        pass
+        self.loop.call_soon_threadsafe(self.aStopComm, self, dev)
 
+    async def aStopComm(self, dev):
+        self.logger.debug("aStopComm()")
+        await api.disconnect()
+        
     # Main thermostat action bottleneck called by Indigo Server.
     def actionControlThermostat(self, action, dev):
         ###### SET HVAC MODE ######
