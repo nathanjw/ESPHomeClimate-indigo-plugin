@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<Devices>
+  <Device type="thermostat"
+	  id="espClimate">
+    <Name>ESPHome Climate Device</Name>
+    <ConfigUI>
+      <Field id="address"
+	     type="textfield">
+	<Label>Device address:</Label>
+      </Field>
+      <Field id="port"
+	     type="textfield"
+	     defaultValue="6053">
+	<Label>ESPHome API port:</Label>
+      </Field>
+      <Field id="psk"
+	     type="textfield">
+	<Label>Encryption key:</Label>
+      </Field>
+      <Field id="password"
+	     type="textfield">
+	<Label>Password:</Label>
+      </Field>
+      <Field id="passwordLabel"
+	     type="label">
+	<Label>Note: Passwords are deprecated and encryption keys are preferred</Label>
+      </Field>
+    </ConfigUI>
+    <!-- TODO(njw):
+	 * handle heat/cool setpoints being the same
+	 * add the fan speed state
+	 * add the vane direction state
+	 * cope with the additional "dry" mode
+    -->
+  </Device>
+</Devices>
