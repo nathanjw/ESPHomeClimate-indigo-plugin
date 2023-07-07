@@ -6,6 +6,7 @@ import asyncio
 import base64
 import indigo
 import logging
+import threading
 
 class Plugin(indigo.PluginBase):
 
@@ -13,24 +14,35 @@ class Plugin(indigo.PluginBase):
         super().__init__(plugin_id, plugin_display_name, plugin_version, plugin_prefs)
         self.debug = True
         self.indigo_log_handler.setLevel(logging.DEBUG)
+        logging.getLogger("asyncio").setLevel(logging.DEBUG)
+        self.loop = None        
+        self.async_thread = None
+        self.device_connections = {}
 
     ########################################
     def startup(self):
         self.logger.debug("startup called")
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
+        # Not sure if set_event_loop() really makes sense. The loop eventually runs
+        # on a different thread, so telling asyncio that it belongs in this context
+        # doesn't seem right.
+        asyncio.set_event_loop(self.loop)
+        self.async_thread = threading.Thread(target=self.run_async_thread)
+        self.async_thread.start()
+
+    def run_async_thread(self):
+        self.loop.create_task(self.async_start())
+        self.loop.run_forever()
+        self.loop.close()
+
+    # do we need this?
+    async def async_start(self):
+        self.logger.debug("async_start()")
         
     def shutdown(self):
         self.logger.debug("shutdown called")
-        
-    def runConcurrentThread(self):
-        self.logger.debug("in runConcurrentThread()")
-        self.loop.run_forever()
-        self.logger.debug("runConcurrentThread() - async loop exited")
-
-    def stopConcurrentThread(self):
-        self.logger.debug("stopConcurrentThread()")
         self.loop.call_soon_threadsafe(self.loop.stop)
-        self.logger.debug("stopConcurrentThread() done")
 
     def validateDeviceConfigUi(self, values_dict, type_id, dev_id):
         self.logger.debug("validateDeviceConfigUi()")
@@ -71,27 +83,41 @@ class Plugin(indigo.PluginBase):
     def espChangeCallback(self, state):
         self.logger.debug("espChangeCallback")
         self.logger.debug(f"state: {state}")
-        
+
     def deviceStartComm(self, dev):
         self.logger.debug("deviceStartComm()")
-        self.loop.call_soon_threadsafe(self.aStartComm, self, dev)
+        api = aioesphomeapi.APIClient(dev.pluginProps["address"],
+                                      int(dev.pluginProps["port"]),
+                                      dev.pluginProps["password"],
+                                      noise_psk = dev.pluginProps["psk"])
+        self.device_connections[dev.id] = api
+        future = asyncio.run_coroutine_threadsafe(self.aStartComm(dev), self.loop)
+        try:
+            result = future.result()
+        except Exception as exc:
+            self.logger.exception(exc)
 
     async def aStartComm(self, dev):
-        self.logger.debug("aStartComm()")
-        self.api = aiohomeapi.APIClient(dev.address, int(dev.port), dev.password, dev.psk)
+        api = self.device_connections[dev.id]
         await api.connect(login=True)
-        await api.subscribe_states(self.esp_change_callback)
-        
-    
+        await api.subscribe_states(self.espChangeCallback)
+
 
     def deviceStopComm(self, dev):
         self.logger.debug("deviceStopComm()")
         # Called when communication with the hardware should be shutdown.
-        self.loop.call_soon_threadsafe(self.aStopComm, self, dev)
+        # self.loop.call_soon_threadsafe(self.aStopComm, self, dev)
+        future = asyncio.run_coroutine_threadsafe(self.aStopComm(dev), self.loop)
+        try:
+            result = future.result()
+        except Exception as exc:
+            self.logger.exception(exc)
 
     async def aStopComm(self, dev):
         self.logger.debug("aStopComm()")
+        api = self.device_connections[dev.id]
         await api.disconnect()
+        del self.device_connections[dev.id]
         
     # Main thermostat action bottleneck called by Indigo Server.
     def actionControlThermostat(self, action, dev):
