@@ -16,7 +16,20 @@ import logging
 import math
 import threading
 
-from dataclasses import dataclass
+kHvacESPModeMap ={aioesphomeapi.ClimateMode.OFF       : indigo.kHvacMode.Off,
+                  aioesphomeapi.ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
+                  aioesphomeapi.ClimateMode.COOL      : indigo.kHvacMode.Cool,
+                  aioesphomeapi.ClimateMode.HEAT      : indigo.kHvacMode.Heat,
+                  #aioesphomeapi.ClimateMode.FAN_ONLY : ,
+                  #aioesphomeapi.ClimateMode.DRY      : ,
+                  #aioesphomeapi.ClimateMode.AUTO     :
+                  } 
+kHvacIndigoModeMap = {indigo.kHvacMode.Off      : aioesphomeapi.ClimateMode.OFF,
+                      indigo.kHvacMode.HeatCool : aioesphomeapi.ClimateMode.HEAT_COOL,
+                      indigo.kHvacMode.Cool     : aioesphomeapi.ClimateMode.COOL,
+                      indigo.kHvacMode.Heat     : aioesphomeapi.ClimateMode.HEAT
+                      }
+
 
 class DeviceInfo:
     """Class for information about a particular ESPHome device"""
@@ -25,12 +38,27 @@ class DeviceInfo:
         self.climate_key = None
 
 class Plugin(indigo.PluginBase):
-
+    """Plugin for ESPHome devices doing climate control, such as Mitsubishi minisplit heads"""
     def __init__(self, plugin_id, plugin_display_name, plugin_version, plugin_prefs):
         super().__init__(plugin_id, plugin_display_name, plugin_version, plugin_prefs)
+
         self.debug = True
         self.indigo_log_handler.setLevel(logging.DEBUG)
         logging.getLogger("asyncio").setLevel(logging.DEBUG)
+
+        # Adding IndigoLogHandler to the root logger makes it possible to see
+        # warnings/errors from async callbacks in the Indigo log, which are otherwise
+        # invivisble.
+        logging.getLogger(None).addHandler(self.indigo_log_handler)
+        # Since we added this to the root, we don't need it low down in the hierarchy; without this
+        # self.logger.*() calls produce duplicates.
+        self.logger.removeHandler(self.indigo_log_handler)
+
+        logging.getLogger(None).debug("Checking where root debug logging goes")
+        logging.getLogger(None).error("Checking where root error logging goes")
+        logging.getLogger("asyncio").debug("Checking where asyncio debug logging goes")
+        logging.getLogger("asyncio").error("Checking where asyncio error logging goes")
+
         self.loop = None
         self.async_thread = None
         self.devices = {}  # map from Indigo's dev.id to a DeviceInfo
@@ -42,22 +70,6 @@ class Plugin(indigo.PluginBase):
 
     def startup(self):
         self.logger.debug("startup called")
-        # Arrange to see logging from async universe, which is annoyingly involved.
-        l = logging.getLogger(None)
-        self.logger.debug(f"root logger: {l}")
-        # Adding IndigoLogHandler to the root logger makes it possible to see
-        # warnings/errors from async callbacks in the Indigo log, which are otherwise
-        # invivisble.
-        logging.getLogger(None).addHandler(self.indigo_log_handler)
-        # Since we added this to the root, we don't need it low down in the hierarchy; without this
-        # self.logger.*() calls produce duplicates.
-        self.logger.removeHandler(self.indigo_log_handler)
-        l.debug("Checking where root debug logging goes")
-        l.error("Checking where root error logging goes")
-        # Ensure that async logging goes somewhere visible
-        #logging.getLogger("asyncio").addHandler(self.indigo_log_handler)
-        logging.getLogger("asyncio").debug("Checking where asyncio debug logging goes")
-        logging.getLogger("asyncio").error("Checking where asyncio error logging goes")
 
         self.loop = asyncio.new_event_loop()
         self.loop.set_debug(True)
@@ -119,28 +131,24 @@ class Plugin(indigo.PluginBase):
             return (False, values_dict, error_dict)
 
     def updateDeviceState(self, dev, state):
-        # key-value list.
-        # {'key':'someKey', 'value':'someValue', 'uiValue':'some verbose value formatting'}
-        kvl = []
+        """Update Indigo's view of the world from an aioesphomeapi.ClimateState object"""
+        # Sample state:
+        # ClimateState(key=4057448159, mode=<ClimateMode.COOL: 2>, action=<ClimateAction.IDLE: 4>,
+        #              current_temperature=nan, target_temperature=25.5, target_temperature_low=0.0,
+        #              target_temperature_high=0.0, legacy_away=False, fan_mode=<ClimateFanMode.OFF: 1>,
+        #              swing_mode=<ClimateSwingMode.OFF: 0>, custom_fan_mode='',
+        #              preset=<ClimatePreset.NONE: 0>, custom_preset='')
+
+        kvl = []  # {'key':'someKey', 'value':'someValue', 'uiValue':'some verbose value formatting'}
         def addKvl(kvl, key, value, uiValue = None):
             if uiValue:
                 kvl.append({'key':key, 'value':value, 'uiValue':uiValue})
             else:
                 kvl.append({'key':key, 'value':value})
 
-        # Sample state
-        # ClimateState(key=4057448159, mode=<ClimateMode.COOL: 2>, action=<ClimateAction.IDLE: 4>, current_temperature=nan, target_temperature=25.5, target_temperature_low=0.0, target_temperature_high=0.0, legacy_away=False, fan_mode=<ClimateFanMode.OFF: 1>, swing_mode=<ClimateSwingMode.OFF: 0>, custom_fan_mode='', preset=<ClimatePreset.NONE: 0>, custom_preset='')
-        modemap = {aioesphomeapi.ClimateMode.OFF : indigo.kHvacMode.Off,
-                   aioesphomeapi.ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
-                   aioesphomeapi.ClimateMode.COOL : indigo.kHvacMode.Cool,
-                   aioesphomeapi.ClimateMode.HEAT : indigo.kHvacMode.Heat,
-                   #aioesphomeapi.ClimateMode.FAN_ONLY : ,
-                   #aioesphomeapi.ClimateMode.DRY : ,
-                   #aioesphomeapi.ClimateMode.AUTO :
-                   }
-        newmode = modemap.get(state.mode, None)
+        newmode = kHvacESPModeMap.get(state.mode, None)
         self.logger.debug(f"ESPHome mode: {state.mode} Indigo mode {newmode}")
-        # Have to test explicitly against None because indigo.kHvacMode.Off is falsey.
+        # Have to test explicitly against None because indigo.kHvacMode.Off is falsy.
         if newmode != None:
             addKvl(kvl, 'hvacOperationMode', newmode)
         # not sure this makes sense for a minisplit?
@@ -152,6 +160,8 @@ class Plugin(indigo.PluginBase):
         addKvl(kvl, 'hvacFanIsOn', (state.action != aioesphomeapi.ClimateAction.OFF and
                                     state.action != aioesphomeapi.ClimateAction.IDLE))
         # from state.target_temperature
+        # ESPHomeApi temperatures are degrees C. Heat pumps that support degrees C
+        # often have half-degree steps, and map degrees F to half-degrees C. 
         settemp = state.target_temperature  # C to F?
         addKvl(kvl, 'setpointCool', settemp)
         addKvl(kvl, 'setpointHeat', settemp)
@@ -242,11 +252,7 @@ class Plugin(indigo.PluginBase):
     def actionControlThermostat(self, action, dev):
         ###### SET HVAC MODE ######
         if action.thermostatAction == indigo.kThermostatAction.SetHvacMode:
-            modemap = {indigo.kHvacMode.Off : aioesphomeapi.ClimateMode.OFF,
-                       indigo.kHvacMode.HeatCool : aioesphomeapi.ClimateMode.HEAT_COOL,
-                       indigo.kHvacMode.Cool : aioesphomeapi.ClimateMode.COOL,
-                       indigo.kHvacMode.Heat : aioesphomeapi.ClimateMode.HEAT}
-            newmode = modemap[action.actionMode]
+            newmode = kHvacIndigoModeMap[action.actionMode]
             self.climateCommand(dev, mode = newmode)
 
         ###### SET FAN MODE ######
@@ -300,26 +306,7 @@ class Plugin(indigo.PluginBase):
 
 
     def actionControlUniversal(self, action, dev):
-        ###### BEEP ######
-        if action.deviceAction == indigo.kUniversalAction.Beep:
-            # Beep the hardware module (dev) here:
-            # ** IMPLEMENT ME **
-            self.logger.info(f"sent \"{dev.name}\" beep request")
-
-        ###### ENERGY UPDATE ######
-        elif action.deviceAction == indigo.kUniversalAction.EnergyUpdate:
-            # Request hardware module (dev) for its most recent meter data here:
-            # ** IMPLEMENT ME **
-            self.logger.info(f"sent \"{dev.name}\" energy update request")
-
-        ###### ENERGY RESET ######
-        elif action.deviceAction == indigo.kUniversalAction.EnergyReset:
-            # Request that the hardware module (dev) reset its accumulative energy usage data here:
-            # ** IMPLEMENT ME **
-            self.logger.info(f"sent \"{dev.name}\" energy reset request")
-
-        ###### STATUS REQUEST ######
-        elif action.deviceAction == indigo.kUniversalAction.RequestStatus:
+        if action.deviceAction == indigo.kUniversalAction.RequestStatus:
             # Query hardware module (dev) for its current status here. This differs from the
             # indigo.kThermostatAction.RequestStatusAll action - for instance, if your thermo
             # is battery powered you might only want to update it only when the user uses
@@ -333,6 +320,9 @@ class Plugin(indigo.PluginBase):
             # No-op climate command will trigger a state callback.
             self.logger.info(f"sending \"{dev.name}\" status request")
             self.climateCommand(dev)
+        else:
+            # Anything else shouldn't happen, issue a warning.
+            self.logger.warnng(f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
 
 
 
