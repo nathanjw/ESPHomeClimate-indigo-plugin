@@ -7,9 +7,9 @@
   <key>ServerApiVersion</key>
   <string>3.0</string>
   <key>CFBundleDisplayName</key>
-  <string>EspHomeClimate</string>
+  <string>ESPHome Climate</string>
   <key>CFBundleIdentifier</key>
-  <string>com.nathanw.IndigoPlugin.EspHomeClimate</string>
+  <string>com.nathanw.IndigoPlugin.ESPHomeClimate</string>
   <key>CFBundleVersion</key>
   <string>1.0.1</string>
   <key>CFBundleURLTypes</key>
