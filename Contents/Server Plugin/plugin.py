@@ -161,7 +161,6 @@ class Plugin(indigo.PluginBase):
                 error_dict["psk"] = "Key, if present, must be a 32-byte base64 string"
 
         if valid:
-            self.logger.debug("Valid")
             return (True, values_dict)
         else:
             self.logger.debug(f"Invalid! {error_dict}")
@@ -176,6 +175,7 @@ class Plugin(indigo.PluginBase):
         #              swing_mode=<ClimateSwingMode.OFF: 0>, custom_fan_mode='',
         #              preset=<ClimatePreset.NONE: 0>, custom_preset='')
 
+        self.logger.debug(f"updateDeviceState(): from ESPHome state {state}")
         kvl = []  # {'key':'someKey', 'value':'someValue', 'uiValue':'some verbose value formatting'}
         def addKvl(kvl, key, value, uiValue = None):
             if uiValue:
@@ -184,7 +184,6 @@ class Plugin(indigo.PluginBase):
                 kvl.append({'key':key, 'value':value})
 
         newmode = kHvacESPModeMap.get(state.mode, None)
-        self.logger.debug(f"ESPHome mode: {state.mode} Indigo mode {newmode}")
         # Have to test explicitly against None because indigo.kHvacMode.Off is falsy.
         if newmode != None:
             addKvl(kvl, 'hvacOperationMode', newmode)
@@ -214,11 +213,9 @@ class Plugin(indigo.PluginBase):
         dev.updateStatesOnServer(kvl)
 
     def espChangeCallback(self, dev, state):
-        self.logger.debug(f"espChangeCallback(): state {state}")
         # If it's the climate state being updated, update Indigo's information.
         devinfo = self.devices[dev.id]
         if state.key == devinfo.climate_key:
-            self.logger.debug("Hey, it's a climate state")
             self.updateDeviceState(dev, state)
 
     def deviceStartComm(self, dev):
@@ -290,7 +287,6 @@ class Plugin(indigo.PluginBase):
     def deviceStopComm(self, dev):
         self.logger.debug("deviceStopComm()")
         # Called when communication with the hardware should be shutdown.
-        # self.loop.call_soon_threadsafe(self.aStopComm, self, dev)
         future = asyncio.run_coroutine_threadsafe(self.aStopComm(dev), self.loop)
         try:
             result = future.result()
