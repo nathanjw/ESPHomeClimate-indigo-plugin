@@ -31,39 +31,6 @@ kHvacIndigoModeMap = {indigo.kHvacMode.Off      : aioesphomeapi.ClimateMode.OFF,
                       indigo.kHvacMode.Heat     : aioesphomeapi.ClimateMode.HEAT
                       }
 
-# temperature map, handheld remote (F) to device (C)
-
-# 88 -> 31     
-# 87 -> 30
-# 86 -> 29.5
-# 85 -> 29
-# 84 -> 28.5
-# 83 -> 28
-# 82 -> 27.5
-# 81 -> 27
-# 80 -> 26.5
-# 79 -> 26
-# 78 -> 25.5
-# 77 -> 25
-# 76 -> 24.5
-# 75 -> 24
-# 74 -> 23.5
-# 73 -> 23
-# 72 -> 22.5
-# 71 -> 22
-# 70 -> 21.5
-# 69 -> 21
-# 68 -> 20
-# 67 -> 19
-# 66 -> 18.5
-# 65 -> 18
-# 64 -> 17.5
-# 63 -> 17
-# 62 -> 16.5
-# 61 -> 16
-
- 
-
 class DeviceInfo:
     """Class for information about a particular ESPHome device"""
     def __init__(self):
@@ -76,9 +43,7 @@ class Plugin(indigo.PluginBase):
     def __init__(self, plugin_id, plugin_display_name, plugin_version, plugin_prefs):
         super().__init__(plugin_id, plugin_display_name, plugin_version, plugin_prefs)
 
-        self.debug = True
-        self.indigo_log_handler.setLevel(logging.DEBUG)
-        logging.getLogger("asyncio").setLevel(logging.DEBUG)
+        self.setupFromPrefs(self.pluginPrefs)        
 
         # Adding IndigoLogHandler to the root logger makes it possible to see
         # warnings/errors from async callbacks in the Indigo log, which are otherwise
@@ -88,10 +53,11 @@ class Plugin(indigo.PluginBase):
         # self.logger.*() calls produce duplicates.
         self.logger.removeHandler(self.indigo_log_handler)
 
-        logging.getLogger(None).debug("Checking where root debug logging goes")
-        logging.getLogger(None).error("Checking where root error logging goes")
-        logging.getLogger("asyncio").debug("Checking where asyncio debug logging goes")
-        logging.getLogger("asyncio").error("Checking where asyncio error logging goes")
+        if self.debug:
+            logging.getLogger(None).debug("Checking where root debug logging goes")
+            logging.getLogger(None).error("Checking where root error logging goes")
+            logging.getLogger("asyncio").debug("Checking where asyncio debug logging goes")
+            logging.getLogger("asyncio").error("Checking where asyncio error logging goes")
 
         self.loop = None
         self.async_thread = None
@@ -99,7 +65,18 @@ class Plugin(indigo.PluginBase):
 
         self.zeroconf = None
 
-########################################
+    def setupFromPrefs(self, pluginPrefs):
+        self.debug = pluginPrefs.get('debugEnabled')
+        if self.debug:
+            self.indigo_log_handler.setLevel(logging.DEBUG)
+            logging.getLogger("asyncio").setLevel(logging.DEBUG)
+            self.logger.debug("Debugging enabled")
+        else:
+            self.logger.debug("Debugging disabled")
+            self.indigo_log_handler.setLevel(logging.INFO)
+            logging.getLogger("asyncio").setLevel(logging.INFO)
+        self.convertF = (self.pluginPrefs.get('temperatureUnit') == 'degreesF')
+        self.logger.debug(f"Convert to/from degrees F: {self.convertF}")
 
     # Indigo plugin method
     def startup(self):
@@ -133,6 +110,12 @@ class Plugin(indigo.PluginBase):
         self.logger.debug("shutdown called")
         self.loop.call_soon_threadsafe(self.loop.stop)
 
+    # Indigo plugin method
+    def closedPrefsConfigUi(self, values_dict, user_cancelled):
+        if user_cancelled:
+            return
+        self.setupFromPrefs(values_dict)
+        
     # Indigo plugin method
     def validateDeviceConfigUi(self, values_dict, type_id, dev_id):
         self.logger.debug("validateDeviceConfigUi()")
@@ -169,6 +152,40 @@ class Plugin(indigo.PluginBase):
             self.logger.debug(f"Invalid! {error_dict}")
             return (False, values_dict, error_dict)
 
+    # temperature map, handheld remote (F) to device (C)
+    # Use this instead of the usual formula and rounding for consistency with the handheld UI.
+    kMitsubishiFtoC = {
+                 61:16.0, 62:16.5, 63:17.0, 64:17.5, 65:18.0, 66:18.5, 67:19.0, 68:20.0, 69:21.0,
+        70:21.5, 71:22.0, 72:22.5, 73:23.0, 74:23.5, 75:24.0, 76:24.5, 77:25.0, 78:25.5, 79:26.0,
+        80:26.5, 81:27.0, 82:27.5, 83:28.0, 84:28.5, 85:29.0, 86:29.5, 87:30.0, 88:31.0}
+    kMitsubishiCtoF = dict(zip(kMitsubishiFtoC.values(), kMitsubishiFtoC.keys()))
+
+    def convertFtoC(self, degF):
+        degC = self.kMitsubishiFtoC.get(degF, None)
+        if not degC:
+            degC = (degF - 32) / 1.8
+            self.logger.warning(f"Could not convert '{degF}' to degrees C with table - returning {degC}")
+        return degC
+
+    def convertCtoF(self, degC):
+        degF = self.kMitsubishiCtoF.get(degC, None)
+        if not degF:
+            degF = degC * 1.8 + 32
+            self.logger.warning(f"Could not convert '{degC}' to degrees F with table - returning {degF}")
+        return degF
+        
+    def maybeConvertToC(self, deg):
+        if self.convertF:
+            return self.convertFtoC(deg)
+        else:
+            return deg
+
+    def maybeConvertToF(self, deg):
+        if self.convertF:
+            return self.convertCtoF(deg)
+        else:
+            return deg
+    
     def updateDeviceState(self, dev, state):
         """Update Indigo's view of the world from an aioesphomeapi.ClimateState object"""
         # Sample state:
@@ -199,15 +216,14 @@ class Plugin(indigo.PluginBase):
         addKvl(kvl, 'hvacFanIsOn', (state.action != aioesphomeapi.ClimateAction.OFF and
                                     state.action != aioesphomeapi.ClimateAction.IDLE))
         # from state.target_temperature
-        # ESPHomeApi temperatures are degrees C. Heat pumps that support degrees C
-        # often have half-degree steps, and map degrees F to half-degrees C. 
+        # ESPHomeApi temperatures are degrees C.
         if not math.isnan(state.target_temperature):
-            settemp = state.target_temperature  # C to F?
+            settemp = self.maybeConvertToF(state.target_temperature)
             addKvl(kvl, 'setpointCool', settemp)
             addKvl(kvl, 'setpointHeat', settemp)
         # from state.current_temperature
         if not math.isnan(state.current_temperature):
-            curtemp = state.current_temperature # C to F?
+            curtemp = self.maybeConvertToF(state.current_temperature)
             addKvl(kvl, 'temperatureInput1', curtemp)
         else:
             self.logger.warning("No reported temperature - disconnected?")
@@ -325,30 +341,30 @@ class Plugin(indigo.PluginBase):
         ###### SET COOL SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.SetCoolSetpoint:
             new_setpoint = action.actionValue
-            self.climateCommand(dev, target_temperature = new_setpoint)
+            self.climateCommandTemp(dev, new_setpoint)
 
         ###### SET HEAT SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.SetHeatSetpoint:
             new_setpoint = action.actionValue
-            self.climateCommand(dev, target_temperature = new_setpoint)
+            self.climateCommandTemp(dev, new_setpoint)
 
         ###### DECREASE/INCREASE COOL SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.DecreaseCoolSetpoint:
             new_setpoint = dev.coolSetpoint - action.actionValue
-            self.climateCommand(dev, target_temperature = new_setpoint)
+            self.climateCommandTemp(dev, new_setpoint)
 
         elif action.thermostatAction == indigo.kThermostatAction.IncreaseCoolSetpoint:
             new_setpoint = dev.coolSetpoint + action.actionValue
-            self.climateCommand(dev, target_temperature = new_setpoint)
+            self.climateCommandTemp(dev, new_setpoint)
 
         ###### DECREASE/INCREASE HEAT SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.DecreaseHeatSetpoint:
             new_setpoint = dev.heatSetpoint - action.actionValue
-            self.climateCommand(dev, target_temperature = new_setpoint)
+            self.climateCommandTemp(dev, new_setpoint)
 
         elif action.thermostatAction == indigo.kThermostatAction.IncreaseHeatSetpoint:
             new_setpoint = dev.heatSetpoint + action.actionValue
-            self.climateCommand(dev, target_temperature = new_setpoint)
+            self.climateCommandTemp(dev, new_setpoint)
 
         ###### REQUEST STATE UPDATES ######
         elif action.thermostatAction in [indigo.kThermostatAction.RequestStatusAll,
@@ -381,6 +397,9 @@ class Plugin(indigo.PluginBase):
         else:
             # Anything else shouldn't happen, issue a warning.
             self.logger.warnng(f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
+
+    def climateCommandTemp(self, dev, temp):
+        self.climateCommand(dev, target_temperature = self.maybeConvertToC(temp))
 
     def climateCommand(self, dev, **kwargs):
         self.logger.debug(f"climateCommand({kwargs})")

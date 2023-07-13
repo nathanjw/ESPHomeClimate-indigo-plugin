@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<PluginConfig>
+	<SupportURL>https://plugins.nathanw.com/TODO/</SupportURL>
+	<Field type="menu" id="temperatureUnit" defaultValue="degreesF">
+	  <Label>Temperature Units:</Label>
+	  <List>
+	    <Option value="degreesF">°F</Option>
+	    <Option value="degreesC">°C</Option>
+	  </List>
+	</Field>
+	<Field type="checkbox" id="debugEnabled" defaultValue="false">
+	  <Label>Emit debugging to log:</Label>
+	</Field>
+</PluginConfig>
