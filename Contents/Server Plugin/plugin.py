@@ -15,12 +15,13 @@ import indigo
 import logging
 import math
 import threading
+import zeroconf
 
 kHvacESPModeMap ={aioesphomeapi.ClimateMode.OFF       : indigo.kHvacMode.Off,
                   aioesphomeapi.ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
                   aioesphomeapi.ClimateMode.COOL      : indigo.kHvacMode.Cool,
                   aioesphomeapi.ClimateMode.HEAT      : indigo.kHvacMode.Heat,
-                  #aioesphomeapi.ClimateMode.FAN_ONLY : ,
+                  aioesphomeapi.ClimateMode.FAN_ONLY  : indigo.kHvacMode.Off,
                   #aioesphomeapi.ClimateMode.DRY      : ,
                   #aioesphomeapi.ClimateMode.AUTO     :
                   } 
@@ -30,12 +31,45 @@ kHvacIndigoModeMap = {indigo.kHvacMode.Off      : aioesphomeapi.ClimateMode.OFF,
                       indigo.kHvacMode.Heat     : aioesphomeapi.ClimateMode.HEAT
                       }
 
+# temperature map, handheld remote (F) to device (C)
+
+# 88 -> 31     
+# 87 -> 30
+# 86 -> 29.5
+# 85 -> 29
+# 84 -> 28.5
+# 83 -> 28
+# 82 -> 27.5
+# 81 -> 27
+# 80 -> 26.5
+# 79 -> 26
+# 78 -> 25.5
+# 77 -> 25
+# 76 -> 24.5
+# 75 -> 24
+# 74 -> 23.5
+# 73 -> 23
+# 72 -> 22.5
+# 71 -> 22
+# 70 -> 21.5
+# 69 -> 21
+# 68 -> 20
+# 67 -> 19
+# 66 -> 18.5
+# 65 -> 18
+# 64 -> 17.5
+# 63 -> 17
+# 62 -> 16.5
+# 61 -> 16
+
+ 
 
 class DeviceInfo:
     """Class for information about a particular ESPHome device"""
     def __init__(self):
         self.api = None
         self.climate_key = None
+        self.reconnect_logic = None
 
 class Plugin(indigo.PluginBase):
     """Plugin for ESPHome devices doing climate control, such as Mitsubishi minisplit heads"""
@@ -63,6 +97,8 @@ class Plugin(indigo.PluginBase):
         self.async_thread = None
         self.devices = {}  # map from Indigo's dev.id to a DeviceInfo
 
+        self.zeroconf = None
+
 ########################################
 
     def asyncio_exception_handler(self, loop, context):
@@ -71,6 +107,7 @@ class Plugin(indigo.PluginBase):
     def startup(self):
         self.logger.debug("startup called")
 
+        self.zeroconf = zeroconf.Zeroconf()
         self.loop = asyncio.new_event_loop()
         self.loop.set_debug(True)
         # Not sure this catches anything.....
@@ -162,9 +199,10 @@ class Plugin(indigo.PluginBase):
         # from state.target_temperature
         # ESPHomeApi temperatures are degrees C. Heat pumps that support degrees C
         # often have half-degree steps, and map degrees F to half-degrees C. 
-        settemp = state.target_temperature  # C to F?
-        addKvl(kvl, 'setpointCool', settemp)
-        addKvl(kvl, 'setpointHeat', settemp)
+        if not math.isnan(state.target_temperature):
+            settemp = state.target_temperature  # C to F?
+            addKvl(kvl, 'setpointCool', settemp)
+            addKvl(kvl, 'setpointHeat', settemp)
         # from state.current_temperature
         if not math.isnan(state.current_temperature):
             curtemp = state.current_temperature # C to F?
@@ -198,11 +236,10 @@ class Plugin(indigo.PluginBase):
         except Exception as exc:
             self.logger.exception(exc)
 
-    async def aStartComm(self, dev):
-        self.logger.debug("aStartComm()")
+    async def onConnect(self, dev):
+        self.logger.debug(f"onConnect of \"{dev.name}\" ")
         devinfo = self.devices[dev.id]
         api = devinfo.api
-        await api.connect(login=True)
         [entities, services] = await api.list_entities_services()
         # Find "Climate" entity
         climate_key = None
@@ -220,6 +257,36 @@ class Plugin(indigo.PluginBase):
         dev.replacePluginPropsOnServer(new_props)
         await api.subscribe_states(lambda state: self.espChangeCallback(dev, state))
 
+
+    async def onDisconnect(self, dev, expected_disconnect):
+        self.logger.debug(f"onDisconnect of \"{dev.name}\" ")
+        self.logger.debug("Setting error state on server")
+        self.dev.setErrorStateOnServer("Disconnected")
+        self.logger.debug("Set error state on server")
+
+    async def onConnectError(self, dev, err):
+        self.logger.error(f"onConnectError of \"{dev.name}\" ")
+        self.logger.exception(err)
+        #self.logger.debug("Setting error state on server")
+        #self.dev.setErrorStateOnServer("Connection Error")
+        #self.logger.debug("Set error state on server")
+    
+    async def aStartComm(self, dev):
+        self.logger.debug("aStartComm()")
+        devinfo = self.devices[dev.id]
+        api = devinfo.api
+        # await api.connect(login=True)
+        # Set up reconnection
+        devinfo.reconnect_logic = (
+            aioesphomeapi.ReconnectLogic(client = api,
+                                         zeroconf_instance = self.zeroconf,
+                                         name = dev.pluginProps["address"],
+                                         on_connect = lambda: self.onConnect(dev),
+                                         on_disconnect = lambda expected: self.onDisconnect(dev, expected),
+                                         on_connect_error = lambda err: self.onConnectError(dev, err)))
+        await devinfo.reconnect_logic.start()        
+
+
     def deviceStopComm(self, dev):
         self.logger.debug("deviceStopComm()")
         # Called when communication with the hardware should be shutdown.
@@ -232,8 +299,9 @@ class Plugin(indigo.PluginBase):
 
     async def aStopComm(self, dev):
         self.logger.debug("aStopComm()")
-        api = self.devices[dev.id].api
-        await api.disconnect()
+        devinfo = self.devices[dev.id]
+        await devinfo.reconnect_logic.stop()
+        await devinfo.api.disconnect()
         del self.devices[dev.id]
 
     def climateCommand(self, dev, **kwargs):
