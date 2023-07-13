@@ -101,9 +101,7 @@ class Plugin(indigo.PluginBase):
 
 ########################################
 
-    def asyncio_exception_handler(self, loop, context):
-        self.logger.debug(f"Event loop exception {context}")
-
+    # Indigo plugin method
     def startup(self):
         self.logger.debug("startup called")
 
@@ -119,6 +117,9 @@ class Plugin(indigo.PluginBase):
         self.async_thread = threading.Thread(target=self.run_async_thread)
         self.async_thread.start()
 
+    def asyncio_exception_handler(self, loop, context):
+        self.logger.debug(f"Event loop exception {context}")
+
     def run_async_thread(self):
         self.logger.debug("run_async_thread called")
         try:
@@ -127,10 +128,12 @@ class Plugin(indigo.PluginBase):
             self.logger.exception(exc)
         self.loop.close()
 
+    # Indigo plugin method
     def shutdown(self):
         self.logger.debug("shutdown called")
         self.loop.call_soon_threadsafe(self.loop.stop)
 
+    # Indigo plugin method
     def validateDeviceConfigUi(self, values_dict, type_id, dev_id):
         self.logger.debug("validateDeviceConfigUi()")
         self.logger.debug(f"values_dict: {values_dict}")
@@ -212,12 +215,13 @@ class Plugin(indigo.PluginBase):
         self.logger.debug(f"Updating Indigo states: {kvl}")
         dev.updateStatesOnServer(kvl)
 
-    def espChangeCallback(self, dev, state):
+    def changeCallback(self, dev, state):
         # If it's the climate state being updated, update Indigo's information.
         devinfo = self.devices[dev.id]
         if state.key == devinfo.climate_key:
             self.updateDeviceState(dev, state)
 
+    # Indigo plugin method
     def deviceStartComm(self, dev):
         self.logger.debug("deviceStartComm()")
         devinfo = DeviceInfo()
@@ -227,11 +231,26 @@ class Plugin(indigo.PluginBase):
                                       noise_psk = dev.pluginProps["psk"])
         devinfo.api = api
         self.devices[dev.id] = devinfo
-        future = asyncio.run_coroutine_threadsafe(self.aStartComm(dev), self.loop)
+        future = asyncio.run_coroutine_threadsafe(self.asyncDeviceStartComm(dev), self.loop)
         try:
             result = future.result()
         except Exception as exc:
             self.logger.exception(exc)
+
+    async def asyncDeviceStartComm(self, dev):
+        self.logger.debug("asyncDeviceStartComm()")
+        devinfo = self.devices[dev.id]
+        api = devinfo.api
+        # Set up reconnection object. Initial connection occurs through this as well,
+        # and post-connection work happens in the onConnect() callback.
+        devinfo.reconnect_logic = (
+            aioesphomeapi.ReconnectLogic(client = api,
+                                         zeroconf_instance = self.zeroconf,
+                                         name = dev.pluginProps["address"],
+                                         on_connect = lambda: self.onConnect(dev),
+                                         on_disconnect = lambda expected: self.onDisconnect(dev, expected),
+                                         on_connect_error = lambda err: self.onConnectError(dev, err)))
+        await devinfo.reconnect_logic.start()        
 
     async def onConnect(self, dev):
         self.logger.debug(f"onConnect of \"{dev.name}\" ")
@@ -252,7 +271,7 @@ class Plugin(indigo.PluginBase):
         new_props = dev.pluginProps
         new_props["ShowCoolHeatEquipmentStateUI"] = True
         dev.replacePluginPropsOnServer(new_props)
-        await api.subscribe_states(lambda state: self.espChangeCallback(dev, state))
+        await api.subscribe_states(lambda state: self.changeCallback(dev, state))
 
 
     async def onDisconnect(self, dev, expected_disconnect):
@@ -264,54 +283,29 @@ class Plugin(indigo.PluginBase):
     async def onConnectError(self, dev, err):
         self.logger.error(f"onConnectError of \"{dev.name}\" ")
         self.logger.exception(err)
+        # XXX setting error state on server here hangs!
         #self.logger.debug("Setting error state on server")
         #self.dev.setErrorStateOnServer("Connection Error")
         #self.logger.debug("Set error state on server")
     
-    async def aStartComm(self, dev):
-        self.logger.debug("aStartComm()")
-        devinfo = self.devices[dev.id]
-        api = devinfo.api
-        # await api.connect(login=True)
-        # Set up reconnection
-        devinfo.reconnect_logic = (
-            aioesphomeapi.ReconnectLogic(client = api,
-                                         zeroconf_instance = self.zeroconf,
-                                         name = dev.pluginProps["address"],
-                                         on_connect = lambda: self.onConnect(dev),
-                                         on_disconnect = lambda expected: self.onDisconnect(dev, expected),
-                                         on_connect_error = lambda err: self.onConnectError(dev, err)))
-        await devinfo.reconnect_logic.start()        
-
-
+    # Indigo plugin method
     def deviceStopComm(self, dev):
         self.logger.debug("deviceStopComm()")
         # Called when communication with the hardware should be shutdown.
-        future = asyncio.run_coroutine_threadsafe(self.aStopComm(dev), self.loop)
+        future = asyncio.run_coroutine_threadsafe(self.asyncDeviceStopComm(dev), self.loop)
         try:
             result = future.result()
         except Exception as exc:
             self.logger.exception(exc)
 
-    async def aStopComm(self, dev):
-        self.logger.debug("aStopComm()")
+    async def asyncDeviceStopComm(self, dev):
+        self.logger.debug("asyncDeviceStopComm()")
         devinfo = self.devices[dev.id]
         await devinfo.reconnect_logic.stop()
         await devinfo.api.disconnect()
         del self.devices[dev.id]
 
-    def climateCommand(self, dev, **kwargs):
-        self.logger.debug(f"climateCommand({kwargs})")
-        devinfo = self.devices[dev.id]
-        api = devinfo.api
-        future = asyncio.run_coroutine_threadsafe(
-            api.climate_command(key = devinfo.climate_key, **kwargs),
-            self.loop)
-        try:
-            result = future.result()
-        except Exception as exc:
-            self.logger.exception(exc)
-
+    # Indigo plugin method
     # Main thermostat action bottleneck called by Indigo Server.
     def actionControlThermostat(self, action, dev):
         ###### SET HVAC MODE ######
@@ -368,7 +362,7 @@ class Plugin(indigo.PluginBase):
             self.logger.debug("Status request action")
             self.climateCommand(dev)
 
-
+    # Indigo plugin method
     def actionControlUniversal(self, action, dev):
         if action.deviceAction == indigo.kUniversalAction.RequestStatus:
             # Query hardware module (dev) for its current status here. This differs from the
@@ -388,6 +382,15 @@ class Plugin(indigo.PluginBase):
             # Anything else shouldn't happen, issue a warning.
             self.logger.warnng(f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
 
-
-
+    def climateCommand(self, dev, **kwargs):
+        self.logger.debug(f"climateCommand({kwargs})")
+        devinfo = self.devices[dev.id]
+        api = devinfo.api
+        future = asyncio.run_coroutine_threadsafe(
+            api.climate_command(key = devinfo.climate_key, **kwargs),
+            self.loop)
+        try:
+            result = future.result()
+        except Exception as exc:
+            self.logger.exception(exc)
 
