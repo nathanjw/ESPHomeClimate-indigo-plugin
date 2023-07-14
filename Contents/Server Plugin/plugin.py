@@ -85,7 +85,6 @@ class Plugin(indigo.PluginBase):
         self.zeroconf = zeroconf.Zeroconf()
         self.loop = asyncio.new_event_loop()
         self.loop.set_debug(True)
-        # Not sure this catches anything.....
         self.loop.set_exception_handler(self.asyncio_exception_handler)
         # Not sure if set_event_loop() really makes sense. The loop eventually runs
         # on a different thread, so telling asyncio that it belongs in this context
@@ -293,16 +292,15 @@ class Plugin(indigo.PluginBase):
     async def onDisconnect(self, dev, expected_disconnect):
         self.logger.debug(f"onDisconnect of \"{dev.name}\" ")
         self.logger.debug("Setting error state on server")
-        self.dev.setErrorStateOnServer("Disconnected")
+        dev.setErrorStateOnServer("Disconnected")
         self.logger.debug("Set error state on server")
 
     async def onConnectError(self, dev, err):
         self.logger.error(f"onConnectError of \"{dev.name}\" ")
         self.logger.exception(err)
-        # XXX setting error state on server here hangs!
-        #self.logger.debug("Setting error state on server")
-        #self.dev.setErrorStateOnServer("Connection Error")
-        #self.logger.debug("Set error state on server")
+        self.logger.debug("Setting error state on server")
+        dev.setErrorStateOnServer("Connection Error")
+        self.logger.debug("Set error state on server")
     
     # Indigo plugin method
     def deviceStopComm(self, dev):
