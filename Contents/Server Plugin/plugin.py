@@ -17,18 +17,19 @@ import math
 import threading
 import zeroconf
 
-kHvacESPModeMap ={aioesphomeapi.ClimateMode.OFF       : indigo.kHvacMode.Off,
-                  aioesphomeapi.ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
-                  aioesphomeapi.ClimateMode.COOL      : indigo.kHvacMode.Cool,
-                  aioesphomeapi.ClimateMode.HEAT      : indigo.kHvacMode.Heat,
-                  aioesphomeapi.ClimateMode.FAN_ONLY  : indigo.kHvacMode.Off,
-                  #aioesphomeapi.ClimateMode.DRY      : ,
-                  #aioesphomeapi.ClimateMode.AUTO     :
+from aioesphomeapi import ClimateMode, ClimateAction, ClimateFanMode
+kHvacESPModeMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
+                  ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
+                  ClimateMode.COOL      : indigo.kHvacMode.Cool,
+                  ClimateMode.HEAT      : indigo.kHvacMode.Heat,
+                  ClimateMode.FAN_ONLY  : indigo.kHvacMode.Off,
+                  #ClimateMode.DRY      : ,
+                  #ClimateMode.AUTO     :
                   } 
-kHvacIndigoModeMap = {indigo.kHvacMode.Off      : aioesphomeapi.ClimateMode.OFF,
-                      indigo.kHvacMode.HeatCool : aioesphomeapi.ClimateMode.HEAT_COOL,
-                      indigo.kHvacMode.Cool     : aioesphomeapi.ClimateMode.COOL,
-                      indigo.kHvacMode.Heat     : aioesphomeapi.ClimateMode.HEAT
+kHvacIndigoModeMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
+                      indigo.kHvacMode.HeatCool : ClimateMode.HEAT_COOL,
+                      indigo.kHvacMode.Cool     : ClimateMode.COOL,
+                      indigo.kHvacMode.Heat     : ClimateMode.HEAT
                       }
 
 class DeviceInfo:
@@ -209,11 +210,11 @@ class Plugin(indigo.PluginBase):
         # not sure this makes sense for a minisplit?
         # addKvl(kvl, 'hvacFanMode', XXXX)
         # derive from state.action
-        addKvl(kvl, 'hvacCoolerIsOn', state.action == aioesphomeapi.ClimateAction.COOLING)
-        addKvl(kvl, 'hvacHeaterIsOn', state.action == aioesphomeapi.ClimateAction.HEATING)
-        addKvl(kvl, 'hvacDehumidifierIsOn', state.action == aioesphomeapi.ClimateAction.DRYING)
-        addKvl(kvl, 'hvacFanIsOn', (state.action != aioesphomeapi.ClimateAction.OFF and
-                                    state.action != aioesphomeapi.ClimateAction.IDLE))
+        addKvl(kvl, 'hvacCoolerIsOn', state.action == ClimateAction.COOLING)
+        addKvl(kvl, 'hvacHeaterIsOn', state.action == ClimateAction.HEATING)
+        addKvl(kvl, 'hvacDehumidifierIsOn', state.action == ClimateAction.DRYING)
+        addKvl(kvl, 'hvacFanIsOn', (state.action != ClimateAction.OFF and
+                                    state.action != ClimateAction.IDLE))
         # from state.target_temperature
         # ESPHomeApi temperatures are degrees C.
         if not math.isnan(state.target_temperature):
