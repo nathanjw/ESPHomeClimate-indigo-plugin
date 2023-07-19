@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <Devices>
-  <DeviceFactory>
+  <Device type="thermostat"
+	  id="espClimate">
     <Name>ESPHome Climate Device</Name>
-    <ButtonTitle>Create</ButtonTitle>
     <ConfigUI>
       <Field id="address"
 	     type="textfield">
@@ -24,17 +24,6 @@
       <Field id="passwordLabel"
 	     type="label">
 	<Label>Note: Passwords are deprecated and encryption keys are preferred</Label>
-      </Field>
-    </ConfigUI>
-  </DeviceFactory>
-  <Device type="thermostat"
-	  id="espClimateThermostat"
-	  allowUserCreation="false">
-    <Name>ESPHome Climate Thermostat</Name>
-    <ConfigUI>
-      <Field id="dummy"
-	     type="textfield">
-	<Label>Sample field</Label>
       </Field>
     </ConfigUI>
     <!-- TODO(njw):
