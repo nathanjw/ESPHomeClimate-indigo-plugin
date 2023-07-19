@@ -324,16 +324,12 @@ class Plugin(indigo.PluginBase):
 
     async def onDisconnect(self, dev, expected_disconnect):
         self.logger.debug(f"onDisconnect of \"{dev.name}\" ")
-        self.logger.debug("Setting error state on server")
         dev.setErrorStateOnServer("Disconnected")
-        self.logger.debug("Set error state on server")
 
     async def onConnectError(self, dev, err):
         self.logger.error(f"onConnectError of \"{dev.name}\" ")
         self.logger.exception(err)
-        self.logger.debug("Setting error state on server")
         dev.setErrorStateOnServer("Connection Error")
-        self.logger.debug("Set error state on server")
     
     # Indigo plugin method
     def deviceStopComm(self, dev):
