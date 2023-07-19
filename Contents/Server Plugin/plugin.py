@@ -110,15 +110,47 @@ class Plugin(indigo.PluginBase):
         self.logger.debug("shutdown called")
         self.loop.call_soon_threadsafe(self.loop.stop)
 
+    
+        
+    # Indigo plugin method
+    def closedDeviceFactoryUi(self, values_dict, user_cancelled, dev_id_list):
+        self.logger.debug(f"closedDeviceFactoryUi(values_dict={values_dict}, user_cancelled={user_cancelled}, dev_id_list={dev_id_list})")
+        if user_cancelled:
+            return
+
+        # What if we're editing an existing device?
+        new_dev = indigo.device.create(protocol = indigo.kProtocol.Plugin,
+                                       deviceTypeId = "espClimateThermostat",
+                                       name = "ESPHome climate thermostat temp")
+        new_dev.model = "ESPHome climate group"
+        new_dev.subModel = "Fred"
+        new_dev.subType = "Thermostat"
+        # new_dev.name = # XXX where does the UI name get stashed?
+        new_dev.replaceOnServer()
+        
+        new_props = new_dev.pluginProps
+        # Copy properties from self.pluginPrefs to device.
+        # There's no real storage for "device group" config, and plugin-level is
+        # inappropriate if there are going to be multiple device groups (say,
+        # if you have more than one ESPHome Climate device/minisplit head).
+        for prop in ['address', 'port', 'psk', 'password']:
+            new_props[prop] = self.pluginPrefs[prop]
+        new_dev.replacePluginPropsOnServer(new_props)
+        
+
+        
+    
+        
     # Indigo plugin method
     def closedPrefsConfigUi(self, values_dict, user_cancelled):
+        self.logger.debug(f"closedPrefsConfigUi(user_cancelled={user_cancelled})")
         if user_cancelled:
             return
         self.setupFromPrefs(values_dict)
         
     # Indigo plugin method
-    def validateDeviceConfigUi(self, values_dict, type_id, dev_id):
-        self.logger.debug("validateDeviceConfigUi()")
+    def validateDeviceFactoryUi(self, values_dict, type_id, dev_id):
+        self.logger.debug("validateDeviceFactoryUi()")
         self.logger.debug(f"values_dict: {values_dict}")
         valid = True
         error_dict = indigo.Dict()
