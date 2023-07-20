@@ -119,7 +119,7 @@ class Plugin(indigo.PluginBase):
         self.async_thread.start()
 
     def asyncio_exception_handler(self, loop, context):
-        self.logger.debug(f"Event loop exception {context}")
+        self.logger.error(f"Event loop exception {context}")
 
     def run_async_thread(self):
         self.logger.debug("run_async_thread called")
@@ -250,8 +250,20 @@ class Plugin(indigo.PluginBase):
         if newfanmode != None:
             addKvl(kvl, "fanMode", newfanmode)
 
-        # addKvl(kvl, 'hvacFanMode', XXXX)
-        # derive from state.action
+        # Indigo wants "fan mode" to be "always on" or "auto". That
+        # doesn't quite track with how the minisplit works - it has a
+        # separate "fan only" mode, but when heating or cooling is
+        # active the fan is always running. So we'll set hvacFanMode
+        # to "always on" only if we're in fan-only mode.  We could
+        # maybe track in the plugin a bit of state here - "the user
+        # wants the fan always on" - and try to manipulate whether we
+        # set to OFF or FAN_ONLY when the HVAC mode is off - but
+        # that's mmore complicated.
+        if state.mode == ClimateMode.FAN_ONLY:
+            addKvl(kvl, 'hvacFanMode', indigo.kFanMode.AlwaysOn)
+        else:
+            addKvl(kvl, 'hvacFanMode', indigo.kFanMode.Auto)
+
         addKvl(kvl, 'hvacCoolerIsOn', state.action == ClimateAction.COOLING)
         addKvl(kvl, 'hvacHeaterIsOn', state.action == ClimateAction.HEATING)
         addKvl(kvl, 'hvacDehumidifierIsOn', state.action == ClimateAction.DRYING)
@@ -371,8 +383,12 @@ class Plugin(indigo.PluginBase):
 
         ###### SET FAN MODE ######
         elif action.thermostatAction == indigo.kThermostatAction.SetFanMode:
-            #self._handle_change_fan_mode_action(dev, action.actionMode)
-            pass
+            # See discussion in updateDeviceState()
+            if dev.states['hvacOperationMode'] == indigo.kHvacMode.Off:
+                if action.actionMode == 1:
+                    self.climateCommand(dev, mode = ClimateMode.FAN_ONLY)
+                else:
+                    self.climateCommand(dev, mode = ClimateMode.OFF)
 
         # The ESPHome climate device only has one setpoint. The device
         # gives us a callback with the new state whenever we do this,
