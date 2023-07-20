@@ -17,7 +17,7 @@ import math
 import threading
 import zeroconf
 
-from aioesphomeapi import ClimateMode, ClimateAction, ClimateFanMode
+from aioesphomeapi import ClimateMode, ClimateAction, ClimateFanMode, ClimateSwingMode
 kHvacESPModeMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
                   ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
                   ClimateMode.COOL      : indigo.kHvacMode.Cool,
@@ -32,12 +32,36 @@ kHvacIndigoModeMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
                       indigo.kHvacMode.Heat     : ClimateMode.HEAT
                       }
 
+# Not all models support all modes. This is intended to be in increasing speed order,
+# but it's not clear how diffuse/quiet/focus compare to one another.
+kFanESPModeMap = {ClimateFanMode.OFF     : "off",
+                  ClimateFanMode.AUTO    : "auto",
+                  ClimateFanMode.FOCUS   : "focus",
+                  ClimateFanMode.DIFFUSE : "diffuse",
+                  ClimateFanMode.QUIET   : "quiet",
+                  ClimateFanMode.LOW     : "low",
+                  ClimateFanMode.MEDIUM  : "medium",
+                  ClimateFanMode.MIDDLE  : "middle",
+                  ClimateFanMode.HIGH    : "high",
+                  ClimateFanMode.ON      : "on",
+                  }
+kFanIndigoModeMap = dict(zip(kFanESPModeMap.values(), kFanESPModeMap.keys()))
+
 class DeviceInfo:
     """Class for information about a particular ESPHome device"""
     def __init__(self):
+        # aioesphomeapi api object
         self.api = None
-        self.climate_key = None
+        # aioesphomeapi reconnect object
         self.reconnect_logic = None
+        # Integer, key of the climate sub-object within ESPhome updates
+        self.climate_key = None
+        # List of ClimateModes that the device is reported to support
+        self.supported_modes = None
+        # List of ClimateFanModes that the device is reported to support
+        self.supported_fan_modes = None
+        # List of ClimateSwingModes that the device is reported to support
+        self.supported_swing_modes = None
 
 class Plugin(indigo.PluginBase):
     """Plugin for ESPHome devices doing climate control, such as Mitsubishi minisplit heads"""
@@ -152,6 +176,21 @@ class Plugin(indigo.PluginBase):
             self.logger.debug(f"Invalid! {error_dict}")
             return (False, values_dict, error_dict)
 
+    # action config UI callback method
+    def getSupportedFanModes(self, filter="", valuesDict=None, typeId="", targetId=0):
+        self.logger.debug(f"filter {filter}  valuesDict {valuesDict}, typeId {typeId}, targetId {targetId}")
+        devinfo = self.devices.get(targetId, None)
+        optionlist = []
+        if devinfo:
+            supported_fan_modes = devinfo.supported_fan_modes
+        else:
+            self.logger.warning(f"Action config callback couldn't find target {targetId} in devices")
+            supported_fan_modes = kFanESPModeMap.keys()
+        for (mode, modestr) in kFanESPModeMap.items():
+            if mode in devinfo.supported_fan_modes:
+                optionlist.append((modestr, modestr.capitalize()))
+        return optionlist
+
     # temperature map, handheld remote (F) to device (C)
     # Use this instead of the usual formula and rounding for consistency with the handheld UI.
     kMitsubishiFtoC = {
@@ -207,7 +246,11 @@ class Plugin(indigo.PluginBase):
         # Have to test explicitly against None because indigo.kHvacMode.Off is falsy.
         if newmode != None:
             addKvl(kvl, 'hvacOperationMode', newmode)
-        # not sure this makes sense for a minisplit?
+
+        newfanmode = kFanESPModeMap.get(state.fan_mode, None)
+        if newfanmode != None:
+            addKvl(kvl, "fanMode", newfanmode)
+
         # addKvl(kvl, 'hvacFanMode', XXXX)
         # derive from state.action
         addKvl(kvl, 'hvacCoolerIsOn', state.action == ClimateAction.COOLING)
@@ -278,6 +321,9 @@ class Plugin(indigo.PluginBase):
         for entity in entities:
             if isinstance(entity, aioesphomeapi.model.ClimateInfo):
                 climate_key = entity.key
+                devinfo.supported_modes = entity.supported_modes
+                devinfo.supported_fan_modes = entity.supported_fan_modes
+                devinfo.supported_swing_modes = entity.supported_swing_modes
                 break
         if not climate_key:
             raise RuntimeError("No climate entity found on ESPHome device")
@@ -393,12 +439,22 @@ class Plugin(indigo.PluginBase):
             # Anything else shouldn't happen, issue a warning.
             self.logger.warnng(f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
 
+    def setFanMode(self, action):
+        devinfo = self.devices.get(action.deviceId, None)
+        if not devinfo:
+            self.logger.error(f"setFanMode() couldn't find device {action.deviceId} in devinfo")
+        newFanMode = kFanIndigoModeMap[action.props['newFanMode']]
+        self.climateCommandDevinfo(devinfo, fan_mode = newFanMode)
+
     def climateCommandTemp(self, dev, temp):
         self.climateCommand(dev, target_temperature = self.maybeConvertToC(temp))
 
     def climateCommand(self, dev, **kwargs):
-        self.logger.debug(f"climateCommand({kwargs})")
         devinfo = self.devices[dev.id]
+        self.climateCommandDevinfo(devinfo, **kwargs)
+
+    def climateCommandDevinfo(self, devinfo, **kwargs):
+        self.logger.debug(f"climateCommandDevinfo({kwargs})")
         api = devinfo.api
         future = asyncio.run_coroutine_threadsafe(
             api.climate_command(key = devinfo.climate_key, **kwargs),

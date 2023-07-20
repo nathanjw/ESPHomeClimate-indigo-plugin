@@ -26,6 +26,27 @@
 	<Label>Note: Passwords are deprecated and encryption keys are preferred</Label>
       </Field>
     </ConfigUI>
+    <States>
+      <State id="fanMode">
+	<ValueType>
+	  <List>
+	    <Option value="off">Off</Option>
+	    <Option value="focus">Focus</Option>
+	    <Option value="diffuse">Diffuse</Option>
+	    <Option value="quiet">Quiet</Option>
+	    <Option value="auto">Auto</Option>
+	    <Option value="low">Low</Option>
+	    <Option value="medium">Medium</Option>
+	    <Option value="middle">Middle</Option>
+	    <Option value="high">High</Option>
+	    <Option value="on">On</Option>
+	  </List>
+	</ValueType>
+	<TriggerLabel>Fan Mode Changed</TriggerLabel>
+	<TriggerLabelPrefix>Fan Mode Changed to</TriggerLabelPrefix>
+	<ControlPageLabel>Current Fan Mode</ControlPageLabel>
+      </State>
+    </States>
     <!-- TODO(njw):
 	 * handle heat/cool setpoints being the same
 	 * add the fan speed state

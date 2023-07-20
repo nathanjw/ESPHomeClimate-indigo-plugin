@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<Actions>
+  <SupportURL>TODO</SupportURL>
+  <Action id="setFanMode"
+	  deviceFilter="self"
+	  uiPath="DeviceActions">
+    <Name>Set Fan Mode</Name>
+    <CallbackMethod>setFanMode</CallbackMethod>
+    <ConfigUI>
+      <Field id="newFanMode"
+	     type="menu">
+	<Label>Fan Mode</Label>
+	<List class="self" method="getSupportedFanModes"/>
+      </Field>
+    </ConfigUI>
+  </Action>
+</Actions>
