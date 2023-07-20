@@ -1,16 +1,16 @@
 <?xml version="1.0"?>
 <Actions>
   <SupportURL>TODO</SupportURL>
-  <Action id="setFanMode"
+  <Action id="setFanSpeed"
 	  deviceFilter="self"
 	  uiPath="DeviceActions">
-    <Name>Set Fan Mode</Name>
-    <CallbackMethod>setFanMode</CallbackMethod>
+    <Name>Set Fan Speed</Name>
+    <CallbackMethod>setFanSpeed</CallbackMethod>
     <ConfigUI>
-      <Field id="newFanMode"
+      <Field id="newFanSpeed"
 	     type="menu">
-	<Label>Fan Mode</Label>
-	<List class="self" method="getSupportedFanModes"/>
+	<Label>Fan Speed</Label>
+	<List class="self" method="getSupportedFanSpeeds"/>
       </Field>
     </ConfigUI>
   </Action>

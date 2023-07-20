@@ -32,20 +32,20 @@ kHvacIndigoModeMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
                       indigo.kHvacMode.Heat     : ClimateMode.HEAT
                       }
 
-# Not all models support all modes. This is intended to be in increasing speed order,
+# Not all models support all speeds. This is intended to be in increasing speed order,
 # but it's not clear how diffuse/quiet/focus compare to one another.
-kFanESPModeMap = {ClimateFanMode.OFF     : "off",
-                  ClimateFanMode.AUTO    : "auto",
-                  ClimateFanMode.FOCUS   : "focus",
-                  ClimateFanMode.DIFFUSE : "diffuse",
-                  ClimateFanMode.QUIET   : "quiet",
-                  ClimateFanMode.LOW     : "low",
-                  ClimateFanMode.MEDIUM  : "medium",
-                  ClimateFanMode.MIDDLE  : "middle",
-                  ClimateFanMode.HIGH    : "high",
-                  ClimateFanMode.ON      : "on",
-                  }
-kFanIndigoModeMap = dict(zip(kFanESPModeMap.values(), kFanESPModeMap.keys()))
+kFanESPSpeedMap = {ClimateFanMode.OFF     : "off",
+                   ClimateFanMode.AUTO    : "auto",
+                   ClimateFanMode.FOCUS   : "focus",
+                   ClimateFanMode.DIFFUSE : "diffuse",
+                   ClimateFanMode.QUIET   : "quiet",
+                   ClimateFanMode.LOW     : "low",
+                   ClimateFanMode.MEDIUM  : "medium",
+                   ClimateFanMode.MIDDLE  : "middle",
+                   ClimateFanMode.HIGH    : "high",
+                   ClimateFanMode.ON      : "on",
+                   }
+kFanIndigoSpeedMap = dict(zip(kFanESPSpeedMap.values(), kFanESPSpeedMap.keys()))
 
 class DeviceInfo:
     """Class for information about a particular ESPHome device"""
@@ -59,7 +59,7 @@ class DeviceInfo:
         # List of ClimateModes that the device is reported to support
         self.supported_modes = None
         # List of ClimateFanModes that the device is reported to support
-        self.supported_fan_modes = None
+        self.supported_fan_speeds = None
         # List of ClimateSwingModes that the device is reported to support
         self.supported_swing_modes = None
 
@@ -119,7 +119,7 @@ class Plugin(indigo.PluginBase):
         self.async_thread.start()
 
     def asyncio_exception_handler(self, loop, context):
-        self.logger.error(f"Event loop exception {context}")
+        self.logger.exception(f"Event loop exception {context}")
 
     def run_async_thread(self):
         self.logger.debug("run_async_thread called")
@@ -177,18 +177,18 @@ class Plugin(indigo.PluginBase):
             return (False, values_dict, error_dict)
 
     # action config UI callback method
-    def getSupportedFanModes(self, filter="", valuesDict=None, typeId="", targetId=0):
+    def getSupportedFanSpeeds(self, filter="", valuesDict=None, typeId="", targetId=0):
         self.logger.debug(f"filter {filter}  valuesDict {valuesDict}, typeId {typeId}, targetId {targetId}")
         devinfo = self.devices.get(targetId, None)
         optionlist = []
         if devinfo:
-            supported_fan_modes = devinfo.supported_fan_modes
+            supported_fan_speeds = devinfo.supported_fan_speeds
         else:
             self.logger.warning(f"Action config callback couldn't find target {targetId} in devices")
-            supported_fan_modes = kFanESPModeMap.keys()
-        for (mode, modestr) in kFanESPModeMap.items():
-            if mode in devinfo.supported_fan_modes:
-                optionlist.append((modestr, modestr.capitalize()))
+            supported_fan_speeds = kFanESPSpeedMap.keys()
+        for (speed, speedstr) in kFanESPSpeedMap.items():
+            if speed in devinfo.supported_fan_speeds:
+                optionlist.append((speedstr, speedstr.capitalize()))
         return optionlist
 
     # temperature map, handheld remote (F) to device (C)
@@ -246,9 +246,9 @@ class Plugin(indigo.PluginBase):
         if newmode != None:
             addKvl(kvl, 'hvacOperationMode', newmode)
 
-        newfanmode = kFanESPModeMap.get(state.fan_mode, None)
-        if newfanmode != None:
-            addKvl(kvl, "fanMode", newfanmode)
+        newfanspeed = kFanESPSpeedMap.get(state.fan_mode, None)
+        if newfanspeed != None:
+            addKvl(kvl, "fanSpeed", newfanspeed)
 
         # Indigo wants "fan mode" to be "always on" or "auto". That
         # doesn't quite track with how the minisplit works - it has a
@@ -333,7 +333,7 @@ class Plugin(indigo.PluginBase):
             if isinstance(entity, aioesphomeapi.model.ClimateInfo):
                 climate_key = entity.key
                 devinfo.supported_modes = entity.supported_modes
-                devinfo.supported_fan_modes = entity.supported_fan_modes
+                devinfo.supported_fan_speeds = entity.supported_fan_modes
                 devinfo.supported_swing_modes = entity.supported_swing_modes
                 break
         if not climate_key:
@@ -454,12 +454,12 @@ class Plugin(indigo.PluginBase):
             # Anything else shouldn't happen, issue a warning.
             self.logger.warnng(f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
 
-    def setFanMode(self, action):
+    def setFanSpeed(self, action):
         devinfo = self.devices.get(action.deviceId, None)
         if not devinfo:
-            self.logger.error(f"setFanMode() couldn't find device {action.deviceId} in devinfo")
-        newFanMode = kFanIndigoModeMap[action.props['newFanMode']]
-        self.climateCommandDevinfo(devinfo, fan_mode = newFanMode)
+            self.logger.error(f"setFanSpeed() couldn't find device {action.deviceId} in devinfo")
+        newFanSpeed = kFanIndigoSpeedMap[action.props['newFanSpeed']]
+        self.climateCommandDevinfo(devinfo, fan_mode = newFanSpeed)
 
     def climateCommandTemp(self, dev, temp):
         self.climateCommand(dev, target_temperature = self.maybeConvertToC(temp))

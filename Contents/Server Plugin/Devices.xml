@@ -27,14 +27,14 @@
       </Field>
     </ConfigUI>
     <States>
-      <State id="fanMode">
+      <State id="fanSpeed">
 	<ValueType>
 	  <List>
 	    <Option value="off">Off</Option>
+	    <Option value="auto">Auto</Option>
 	    <Option value="focus">Focus</Option>
 	    <Option value="diffuse">Diffuse</Option>
 	    <Option value="quiet">Quiet</Option>
-	    <Option value="auto">Auto</Option>
 	    <Option value="low">Low</Option>
 	    <Option value="medium">Medium</Option>
 	    <Option value="middle">Middle</Option>
@@ -42,9 +42,9 @@
 	    <Option value="on">On</Option>
 	  </List>
 	</ValueType>
-	<TriggerLabel>Fan Mode Changed</TriggerLabel>
-	<TriggerLabelPrefix>Fan Mode Changed to</TriggerLabelPrefix>
-	<ControlPageLabel>Current Fan Mode</ControlPageLabel>
+	<TriggerLabel>Fan Speed Changed</TriggerLabel>
+	<TriggerLabelPrefix>Fan Speed Changed to</TriggerLabelPrefix>
+	<ControlPageLabel>Current Fan Speed</ControlPageLabel>
       </State>
     </States>
     <!-- TODO(njw):
