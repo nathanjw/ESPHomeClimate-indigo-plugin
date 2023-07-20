@@ -228,12 +228,11 @@ class Plugin(indigo.PluginBase):
     def updateDeviceState(self, dev, state):
         """Update Indigo's view of the world from an aioesphomeapi.ClimateState object"""
         # Sample state:
-        # ClimateState(key=4057448159, mode=<ClimateMode.COOL: 2>, action=<ClimateAction.IDLE: 4>,
-        #              current_temperature=nan, target_temperature=25.5, target_temperature_low=0.0,
-        #              target_temperature_high=0.0, legacy_away=False, fan_mode=<ClimateFanMode.OFF: 1>,
-        #              swing_mode=<ClimateSwingMode.OFF: 0>, custom_fan_mode='',
-        #              preset=<ClimatePreset.NONE: 0>, custom_preset='')
-
+        # ClimateState(key=4057448159, mode=<ClimateMode.COOL: 2>, action=<ClimateAction.COOLING: 2>,
+        #              current_temperature=25.0, target_temperature=24.0, target_temperature_low=0.0,
+        #              target_temperature_high=0.0, legacy_away=False, fan_mode=<ClimateFanMode.MEDIUM: 4>,
+        #              swing_mode=<ClimateSwingMode.OFF: 0>, custom_fan_mode='', preset=<ClimatePreset.NONE: 0>,
+        #              custom_preset='')
         self.logger.debug(f"updateDeviceState(): from ESPHome state {state}")
         kvl = []  # {'key':'someKey', 'value':'someValue', 'uiValue':'some verbose value formatting'}
         def addKvl(kvl, key, value, uiValue = None):
