@@ -456,7 +456,7 @@ class Plugin(indigo.PluginBase):
     # Action callback
     def setFanSpeed(self, action):
         dev = indigo.devices[action.deviceId]
-        self.climateCommandFanSpeed(dev, fan_mode = action.props['newFanSpeed'])
+        self.climateCommand(dev, fan_mode = action.props['newFanSpeed'])
 
     def climateCommand(self, dev, **kwargs):
         self.logger.debug(f"climateCommand({kwargs})")
