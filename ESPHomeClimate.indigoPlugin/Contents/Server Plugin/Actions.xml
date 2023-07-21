@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
 <Actions>
-  <SupportURL>TODO</SupportURL>
   <Action id="setFanSpeed"
 	  deviceFilter="self"
 	  uiPath="DeviceActions">
