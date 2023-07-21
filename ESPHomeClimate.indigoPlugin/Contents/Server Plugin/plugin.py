@@ -5,13 +5,14 @@
 # - Grab device info (ESPHome info, not minisplit info?)
 # - Custom state for fan vane setting
 
-import aioesphomeapi
 import asyncio
 import base64
-import indigo
 import logging
 import math
 import threading
+
+import aioesphomeapi
+import indigo
 import zeroconf
 
 from aioesphomeapi import ClimateMode, ClimateAction, ClimateFanMode, ClimateSwingMode
@@ -22,7 +23,7 @@ kHvacESPModeMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
                   ClimateMode.FAN_ONLY  : indigo.kHvacMode.Off,
                   #ClimateMode.DRY      : ,
                   #ClimateMode.AUTO     : ,
-                  } 
+                  }
 kHvacIndigoModeMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
                       indigo.kHvacMode.HeatCool : ClimateMode.HEAT_COOL,
                       indigo.kHvacMode.Cool     : ClimateMode.COOL,
@@ -68,7 +69,7 @@ class Plugin(indigo.PluginBase):
     def __init__(self, plugin_id, plugin_display_name, plugin_version, plugin_prefs):
         super().__init__(plugin_id, plugin_display_name, plugin_version, plugin_prefs)
 
-        self.setupFromPrefs(self.pluginPrefs)        
+        self.setupFromPrefs(self.pluginPrefs)
 
         # Adding IndigoLogHandler to the root logger makes it possible to see
         # warnings/errors from async callbacks in the Indigo log, which are otherwise
@@ -100,7 +101,7 @@ class Plugin(indigo.PluginBase):
             self.logger.debug("Debugging disabled")
             self.indigo_log_handler.setLevel(logging.INFO)
             logging.getLogger("asyncio").setLevel(logging.INFO)
-        self.convertF = (self.pluginPrefs.get('temperatureUnit') == 'degreesF')
+        self.convertF = self.pluginPrefs.get('temperatureUnit') == 'degreesF'
         self.logger.debug(f"Convert to/from degrees F: {self.convertF}")
 
     # Indigo plugin method
@@ -139,7 +140,7 @@ class Plugin(indigo.PluginBase):
         if user_cancelled:
             return
         self.setupFromPrefs(values_dict)
-        
+
     # Indigo plugin method
     def validateDeviceConfigUi(self, values_dict, type_id, dev_id):
         self.logger.debug("validateDeviceConfigUi()")
@@ -172,19 +173,20 @@ class Plugin(indigo.PluginBase):
 
         if valid:
             return (True, values_dict)
-        else:
-            self.logger.debug(f"Invalid! {error_dict}")
-            return (False, values_dict, error_dict)
+        self.logger.debug(f"Invalid! {error_dict}")
+        return (False, values_dict, error_dict)
 
     # action config UI callback method
     def getSupportedFanSpeeds(self, filter="", valuesDict=None, typeId="", targetId=0):
-        self.logger.debug(f"filter {filter}  valuesDict {valuesDict}, typeId {typeId}, targetId {targetId}")
+        self.logger.debug(
+            f"filter {filter}  valuesDict {valuesDict}, typeId {typeId}, targetId {targetId}")
         devinfo = self.devices.get(targetId, None)
         optionlist = []
         if devinfo:
             supported_fan_speeds = devinfo.supported_fan_speeds
         else:
-            self.logger.warning(f"Action config callback couldn't find target {targetId} in devices")
+            self.logger.warning(
+                f"Action config callback couldn't find target {targetId} in devices")
             supported_fan_speeds = kFanESPSpeedMap.keys()
         for (speed, speedstr) in kFanESPSpeedMap.items():
             if speed in devinfo.supported_fan_speeds:
@@ -203,38 +205,39 @@ class Plugin(indigo.PluginBase):
         degC = self.kMitsubishiFtoC.get(degF, None)
         if not degC:
             degC = (degF - 32) / 1.8
-            self.logger.warning(f"Could not convert '{degF}' to degrees C with table - returning {degC}")
+            self.logger.warning(
+                f"Could not convert '{degF}' to degrees C with table - returning {degC}")
         return degC
 
     def convertCtoF(self, degC):
         degF = self.kMitsubishiCtoF.get(degC, None)
         if not degF:
             degF = degC * 1.8 + 32
-            self.logger.warning(f"Could not convert '{degC}' to degrees F with table - returning {degF}")
+            self.logger.warning(
+                f"Could not convert '{degC}' to degrees F with table - returning {degF}")
         return degF
-        
+
     def maybeConvertToC(self, deg):
         if self.convertF:
             return self.convertFtoC(deg)
-        else:
-            return deg
+        return deg
 
     def maybeConvertToF(self, deg):
         if self.convertF:
             return self.convertCtoF(deg)
-        else:
-            return deg
-    
+        return deg
+
     def updateDeviceState(self, dev, state):
         """Update Indigo's view of the world from an aioesphomeapi.ClimateState object"""
         # Sample state:
-        # ClimateState(key=4057448159, mode=<ClimateMode.COOL: 2>, action=<ClimateAction.COOLING: 2>,
-        #              current_temperature=25.0, target_temperature=24.0, target_temperature_low=0.0,
-        #              target_temperature_high=0.0, legacy_away=False, fan_mode=<ClimateFanMode.MEDIUM: 4>,
-        #              swing_mode=<ClimateSwingMode.OFF: 0>, custom_fan_mode='', preset=<ClimatePreset.NONE: 0>,
-        #              custom_preset='')
+        # ClimateState(key=4057448159, mode=<ClimateMode.COOL: 2>,
+        #              action=<ClimateAction.COOLING: 2>, current_temperature=25.0,
+        #              target_temperature=24.0, target_temperature_low=0.0,
+        #              target_temperature_high=0.0, legacy_away=False,
+        #              fan_mode=<ClimateFanMode.MEDIUM: 4>, swing_mode=<ClimateSwingMode.OFF: 0>,
+        #              custom_fan_mode='', preset=<ClimatePreset.NONE: 0>, custom_preset='')
         self.logger.debug(f"updateDeviceState(): from ESPHome state {state}")
-        kvl = []  # {'key':'someKey', 'value':'someValue', 'uiValue':'some verbose value formatting'}
+        kvl = []
         def addKvl(kvl, key, value, uiValue = None):
             if uiValue:
                 kvl.append({'key':key, 'value':value, 'uiValue':uiValue})
@@ -243,11 +246,11 @@ class Plugin(indigo.PluginBase):
 
         newmode = kHvacESPModeMap.get(state.mode, None)
         # Have to test explicitly against None because indigo.kHvacMode.Off is falsy.
-        if newmode != None:
+        if newmode is not None:
             addKvl(kvl, 'hvacOperationMode', newmode)
 
         newfanspeed = kFanESPSpeedMap.get(state.fan_mode, None)
-        if newfanspeed != None:
+        if newfanspeed is not None:
             addKvl(kvl, "fanSpeed", newfanspeed)
 
         # Indigo wants "fan mode" to be "always on" or "auto". That
@@ -267,8 +270,7 @@ class Plugin(indigo.PluginBase):
         addKvl(kvl, 'hvacCoolerIsOn', state.action == ClimateAction.COOLING)
         addKvl(kvl, 'hvacHeaterIsOn', state.action == ClimateAction.HEATING)
         addKvl(kvl, 'hvacDehumidifierIsOn', state.action == ClimateAction.DRYING)
-        addKvl(kvl, 'hvacFanIsOn', (state.action != ClimateAction.OFF and
-                                    state.action != ClimateAction.IDLE))
+        addKvl(kvl, 'hvacFanIsOn', (state.action not in [ClimateAction.OFF, ClimateAction.IDLE]))
         # from state.target_temperature
         # ESPHomeApi temperatures are degrees C.
         if not math.isnan(state.target_temperature):
@@ -303,7 +305,7 @@ class Plugin(indigo.PluginBase):
         self.devices[dev.id] = devinfo
         future = asyncio.run_coroutine_threadsafe(self.asyncDeviceStartComm(dev), self.loop)
         try:
-            result = future.result()
+            future.result()
         except Exception as exc:
             self.logger.exception(exc)
 
@@ -314,19 +316,20 @@ class Plugin(indigo.PluginBase):
         # Set up reconnection object. Initial connection occurs through this as well,
         # and post-connection work happens in the onConnect() callback.
         devinfo.reconnect_logic = (
-            aioesphomeapi.ReconnectLogic(client = api,
-                                         zeroconf_instance = self.zeroconf,
-                                         name = dev.pluginProps["address"],
-                                         on_connect = lambda: self.onConnect(dev),
-                                         on_disconnect = lambda expected: self.onDisconnect(dev, expected),
-                                         on_connect_error = lambda err: self.onConnectError(dev, err)))
-        await devinfo.reconnect_logic.start()        
+            aioesphomeapi.ReconnectLogic(
+                client = api,
+                zeroconf_instance = self.zeroconf,
+                name = dev.pluginProps["address"],
+                on_connect = lambda: self.onConnect(dev),
+                on_disconnect = lambda expected: self.onDisconnect(dev, expected),
+                on_connect_error = lambda err: self.onConnectError(dev, err)))
+        await devinfo.reconnect_logic.start()
 
     async def onConnect(self, dev):
         self.logger.debug(f"onConnect of \"{dev.name}\" ")
         devinfo = self.devices[dev.id]
         api = devinfo.api
-        [entities, services] = await api.list_entities_services()
+        [entities, _] = await api.list_entities_services()
         # Find "Climate" entity
         climate_key = None
         for entity in entities:
@@ -355,14 +358,14 @@ class Plugin(indigo.PluginBase):
         self.logger.error(f"onConnectError of \"{dev.name}\" ")
         self.logger.exception(err)
         dev.setErrorStateOnServer("Connection Error")
-    
+
     # Indigo plugin method
     def deviceStopComm(self, dev):
         self.logger.debug("deviceStopComm()")
         # Called when communication with the hardware should be shutdown.
         future = asyncio.run_coroutine_threadsafe(self.asyncDeviceStopComm(dev), self.loop)
         try:
-            result = future.result()
+            future.result()
         except Exception as exc:
             self.logger.exception(exc)
 
@@ -451,7 +454,8 @@ class Plugin(indigo.PluginBase):
             self.climateCommand(dev)
         else:
             # Anything else shouldn't happen, issue a warning.
-            self.logger.warnng(f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
+            self.logger.warnng(
+                f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
 
     # Action callback
     def setFanSpeed(self, action):
@@ -468,11 +472,11 @@ class Plugin(indigo.PluginBase):
         # been used to adjust the settings. Since this plugin gets updated
         # (by that same heatpump library!) after such updates, it's best to
         # set all the states we know about.
-        if not 'target_temperature' in kwargs:
+        if 'target_temperature' not in kwargs:
             kwargs['target_temperature'] = dev.states['setpointCool']
-        if not 'fan_mode' in kwargs:
+        if 'fan_mode' not in kwargs:
             kwargs['fan_mode'] = dev.states['fanSpeed']
-        if not 'mode' in kwargs:
+        if 'mode' not in kwargs:
             kwargs['mode'] = dev.states['hvacOperationMode']
 
         # Translate Indigo-world values to ESPHomeAPI values
@@ -487,7 +491,6 @@ class Plugin(indigo.PluginBase):
             api.climate_command(key = devinfo.climate_key, **kwargs),
             self.loop)
         try:
-            result = future.result()
+            future.result()
         except Exception as exc:
             self.logger.exception(exc)
-
