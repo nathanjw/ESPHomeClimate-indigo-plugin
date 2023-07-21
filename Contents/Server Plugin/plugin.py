@@ -2,11 +2,8 @@
 # -*- coding: utf-8 -*-
 
 # TODO
-# - Config param for C/F conversion (per device? per plugin?)
 # - Grab device info (ESPHome info, not minisplit info?)
 # - Custom state for fan vane setting
-
-
 
 import aioesphomeapi
 import asyncio
@@ -24,14 +21,17 @@ kHvacESPModeMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
                   ClimateMode.HEAT      : indigo.kHvacMode.Heat,
                   ClimateMode.FAN_ONLY  : indigo.kHvacMode.Off,
                   #ClimateMode.DRY      : ,
-                  #ClimateMode.AUTO     :
+                  #ClimateMode.AUTO     : ,
                   } 
 kHvacIndigoModeMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
                       indigo.kHvacMode.HeatCool : ClimateMode.HEAT_COOL,
                       indigo.kHvacMode.Cool     : ClimateMode.COOL,
-                      indigo.kHvacMode.Heat     : ClimateMode.HEAT
-                      }
-
+                      indigo.kHvacMode.Heat     : ClimateMode.HEAT,
+                      # Somewhat of a hack: Indigo doesn't have a "fan only" HVAC mode,
+                      # representing that in a different place. Adding this to the map
+                      # makes it work to do all of the mode transaltion inside climateCommand()
+                      ClimateMode.FAN_ONLY      : ClimateMode.FAN_ONLY
+                    }
 # Not all models support all speeds. This is intended to be in increasing speed order,
 # but it's not clear how diffuse/quiet/focus compare to one another.
 kFanESPSpeedMap = {ClimateFanMode.OFF     : "off",
@@ -378,8 +378,7 @@ class Plugin(indigo.PluginBase):
     def actionControlThermostat(self, action, dev):
         ###### SET HVAC MODE ######
         if action.thermostatAction == indigo.kThermostatAction.SetHvacMode:
-            newmode = kHvacIndigoModeMap[action.actionMode]
-            self.climateCommand(dev, mode = newmode)
+            self.climateCommand(dev, mode = action.actionMode)
 
         ###### SET FAN MODE ######
         elif action.thermostatAction == indigo.kThermostatAction.SetFanMode:
@@ -388,7 +387,7 @@ class Plugin(indigo.PluginBase):
                 if action.actionMode == 1:
                     self.climateCommand(dev, mode = ClimateMode.FAN_ONLY)
                 else:
-                    self.climateCommand(dev, mode = ClimateMode.OFF)
+                    self.climateCommand(dev, mode = indigo.kHvacMode.Off)
 
         # The ESPHome climate device only has one setpoint. The device
         # gives us a callback with the new state whenever we do this,
@@ -397,30 +396,30 @@ class Plugin(indigo.PluginBase):
         ###### SET COOL SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.SetCoolSetpoint:
             new_setpoint = action.actionValue
-            self.climateCommandTemp(dev, new_setpoint)
+            self.climateCommand(dev, target_temperature = new_setpoint)
 
         ###### SET HEAT SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.SetHeatSetpoint:
             new_setpoint = action.actionValue
-            self.climateCommandTemp(dev, new_setpoint)
+            self.climateCommand(dev, target_temperature = new_setpoint)
 
         ###### DECREASE/INCREASE COOL SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.DecreaseCoolSetpoint:
             new_setpoint = dev.coolSetpoint - action.actionValue
-            self.climateCommandTemp(dev, new_setpoint)
+            self.climateCommand(dev, target_temperature = new_setpoint)
 
         elif action.thermostatAction == indigo.kThermostatAction.IncreaseCoolSetpoint:
             new_setpoint = dev.coolSetpoint + action.actionValue
-            self.climateCommandTemp(dev, new_setpoint)
+            self.climateCommand(dev, target_temperature = new_setpoint)
 
         ###### DECREASE/INCREASE HEAT SETPOINT ######
         elif action.thermostatAction == indigo.kThermostatAction.DecreaseHeatSetpoint:
             new_setpoint = dev.heatSetpoint - action.actionValue
-            self.climateCommandTemp(dev, new_setpoint)
+            self.climateCommand(dev, target_temperature = new_setpoint)
 
         elif action.thermostatAction == indigo.kThermostatAction.IncreaseHeatSetpoint:
             new_setpoint = dev.heatSetpoint + action.actionValue
-            self.climateCommandTemp(dev, new_setpoint)
+            self.climateCommand(dev, target_temperature = new_setpoint)
 
         ###### REQUEST STATE UPDATES ######
         elif action.thermostatAction in [indigo.kThermostatAction.RequestStatusAll,
@@ -454,22 +453,35 @@ class Plugin(indigo.PluginBase):
             # Anything else shouldn't happen, issue a warning.
             self.logger.warnng(f"Unsupported action request \"{action.deviceAction}\" for device \"{dev.name}\"")
 
+    # Action callback
     def setFanSpeed(self, action):
-        devinfo = self.devices.get(action.deviceId, None)
-        if not devinfo:
-            self.logger.error(f"setFanSpeed() couldn't find device {action.deviceId} in devinfo")
-        newFanSpeed = kFanIndigoSpeedMap[action.props['newFanSpeed']]
-        self.climateCommandDevinfo(devinfo, fan_mode = newFanSpeed)
-
-    def climateCommandTemp(self, dev, temp):
-        self.climateCommand(dev, target_temperature = self.maybeConvertToC(temp))
+        dev = indigo.devices[action.deviceId]
+        self.climateCommandFanSpeed(dev, fan_mode = action.props['newFanSpeed'])
 
     def climateCommand(self, dev, **kwargs):
-        devinfo = self.devices[dev.id]
-        self.climateCommandDevinfo(devinfo, **kwargs)
+        self.logger.debug(f"climateCommand({kwargs})")
+        # The Mitsubishi heatpump library -
+        # https://github.com/SwiCago/HeatPump - generally operates in a
+        # mode where it believes it's the only thing in control. This means
+        # that the last set of settings it applied is applied every time we
+        # update something, even if something else (like the IR remote) has
+        # been used to adjust the settings. Since this plugin gets updated
+        # (by that same heatpump library!) after such updates, it's best to
+        # set all the states we know about.
+        if not 'target_temperature' in kwargs:
+            kwargs['target_temperature'] = dev.states['setpointCool']
+        if not 'fan_mode' in kwargs:
+            kwargs['fan_mode'] = dev.states['fanSpeed']
+        if not 'mode' in kwargs:
+            kwargs['mode'] = dev.states['hvacOperationMode']
 
-    def climateCommandDevinfo(self, devinfo, **kwargs):
-        self.logger.debug(f"climateCommandDevinfo({kwargs})")
+        # Translate Indigo-world values to ESPHomeAPI values
+        kwargs['target_temperature'] = self.maybeConvertToC(kwargs['target_temperature'])
+        kwargs['fan_mode'] = kFanIndigoSpeedMap[kwargs['fan_mode']]
+        kwargs['mode'] = kHvacIndigoModeMap[kwargs['mode']]
+
+        self.logger.debug(f"running api.climate_command({kwargs})")
+        devinfo = self.devices[dev.id]
         api = devinfo.api
         future = asyncio.run_coroutine_threadsafe(
             api.climate_command(key = devinfo.climate_key, **kwargs),
