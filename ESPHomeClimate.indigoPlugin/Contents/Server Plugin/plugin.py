@@ -78,7 +78,7 @@ class Plugin(indigo.PluginBase):
     def __init__(self, plugin_id, plugin_display_name, plugin_version, plugin_prefs):
         super().__init__(plugin_id, plugin_display_name, plugin_version, plugin_prefs)
 
-        self.setupFromPrefs(self.pluginPrefs)
+        self.setupFromPrefs(plugin_prefs)
 
         # Adding IndigoLogHandler to the root logger makes it possible to see
         # warnings/errors from async callbacks in the Indigo log, which are otherwise
@@ -101,7 +101,7 @@ class Plugin(indigo.PluginBase):
         self.zeroconf = None
 
     def setupFromPrefs(self, pluginPrefs):
-        self.debug = pluginPrefs.get('debugEnabled')
+        self.debug = pluginPrefs.get('debugEnabled', None)
         if self.debug:
             self.indigo_log_handler.setLevel(logging.DEBUG)
             logging.getLogger("asyncio").setLevel(logging.DEBUG)
@@ -110,7 +110,7 @@ class Plugin(indigo.PluginBase):
             self.logger.debug("Debugging disabled")
             self.indigo_log_handler.setLevel(logging.INFO)
             logging.getLogger("asyncio").setLevel(logging.INFO)
-        self.convertF = self.pluginPrefs.get('temperatureUnit') == 'degreesF'
+        self.convertF = pluginPrefs.get('temperatureUnit', None) == 'degreesF'
         self.logger.debug(f"Convert to/from degrees F: {self.convertF}")
 
     # Indigo plugin method
