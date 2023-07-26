@@ -3,7 +3,6 @@
 
 # TODO
 # - Grab device info (ESPHome info, not minisplit info?)
-# - Custom state for fan vane setting
 
 import asyncio
 import base64
