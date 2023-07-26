@@ -16,7 +16,7 @@ import indigo
 import zeroconf
 
 from aioesphomeapi import ClimateMode, ClimateAction, ClimateFanMode, ClimateSwingMode
-kHvacESPModeMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
+kHvacModeESPMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
                   ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
                   ClimateMode.COOL      : indigo.kHvacMode.Cool,
                   ClimateMode.HEAT      : indigo.kHvacMode.Heat,
@@ -24,7 +24,7 @@ kHvacESPModeMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
                   #ClimateMode.DRY      : ,
                   #ClimateMode.AUTO     : ,
                   }
-kHvacIndigoModeMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
+kHvacModeIndigoMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
                       indigo.kHvacMode.HeatCool : ClimateMode.HEAT_COOL,
                       indigo.kHvacMode.Cool     : ClimateMode.COOL,
                       indigo.kHvacMode.Heat     : ClimateMode.HEAT,
@@ -33,9 +33,10 @@ kHvacIndigoModeMap = {indigo.kHvacMode.Off      : ClimateMode.OFF,
                       # makes it work to do all of the mode transaltion inside climateCommand()
                       ClimateMode.FAN_ONLY      : ClimateMode.FAN_ONLY
                     }
+
 # Not all models support all speeds. This is intended to be in increasing speed order,
 # but it's not clear how diffuse/quiet/focus compare to one another.
-kFanESPSpeedMap = {ClimateFanMode.OFF     : "off",
+kFanSpeedESPMap = {ClimateFanMode.OFF     : "off",
                    ClimateFanMode.AUTO    : "auto",
                    ClimateFanMode.FOCUS   : "focus",
                    ClimateFanMode.DIFFUSE : "diffuse",
@@ -46,7 +47,7 @@ kFanESPSpeedMap = {ClimateFanMode.OFF     : "off",
                    ClimateFanMode.HIGH    : "high",
                    ClimateFanMode.ON      : "on",
                    }
-kFanIndigoSpeedMap = dict(zip(kFanESPSpeedMap.values(), kFanESPSpeedMap.keys()))
+kFanSpeedIndigoMap = dict(zip(kFanSpeedESPMap.values(), kFanSpeedESPMap.keys()))
 
 # Mitsubishi heat pumps also have a controllable vane *angle*, not just a swing setting,
 # but ESPHome doesn't expose that currently.
@@ -196,8 +197,8 @@ class Plugin(indigo.PluginBase):
         else:
             self.logger.warning(
                 f"Action config callback couldn't find target {targetId} in devices")
-            supported_fan_speeds = kFanESPSpeedMap.keys()
-        for (speed, speedstr) in kFanESPSpeedMap.items():
+            supported_fan_speeds = kFanSpeedESPMap.keys()
+        for (speed, speedstr) in kFanSpeedESPMap.items():
             if speed in supported_fan_speeds:
                 optionlist.append((speedstr, speedstr.capitalize()))
         return optionlist
@@ -270,12 +271,12 @@ class Plugin(indigo.PluginBase):
             else:
                 kvl.append({'key':key, 'value':value})
 
-        newmode = kHvacESPModeMap.get(state.mode, None)
+        newmode = kHvacModeESPMap.get(state.mode, None)
         # Have to test explicitly against None because indigo.kHvacMode.Off is falsy.
         if newmode is not None:
             addKvl(kvl, 'hvacOperationMode', newmode)
 
-        newfanspeed = kFanESPSpeedMap.get(state.fan_mode, None)
+        newfanspeed = kFanSpeedESPMap.get(state.fan_mode, None)
         if newfanspeed:
             addKvl(kvl, "fanSpeed", newfanspeed)
 
@@ -518,9 +519,9 @@ class Plugin(indigo.PluginBase):
 
         # Translate Indigo-world values to ESPHomeAPI values
         kwargs['target_temperature'] = self.maybeConvertToC(kwargs['target_temperature'])
-        kwargs['fan_mode'] = kFanIndigoSpeedMap[kwargs['fan_mode']]
+        kwargs['fan_mode'] = kFanSpeedIndigoMap[kwargs['fan_mode']]
         kwargs['swing_mode'] = kSwingModeIndigoMap[kwargs['swing_mode']]
-        kwargs['mode'] = kHvacIndigoModeMap[kwargs['mode']]
+        kwargs['mode'] = kHvacModeIndigoMap[kwargs['mode']]
 
         self.logger.debug(f"running api.climate_command({kwargs})")
         devinfo = self.devices[dev.id]
