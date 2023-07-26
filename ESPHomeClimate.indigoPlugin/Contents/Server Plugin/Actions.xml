@@ -13,4 +13,17 @@
       </Field>
     </ConfigUI>
   </Action>
+  <Action id="setVaneSwingMode"
+	  deviceFilter="self"
+	  uiPath="DeviceActions">
+    <Name>Set Vane Swing Mode</Name>
+    <CallbackMethod>setVaneSwingMode</CallbackMethod>
+    <ConfigUI>
+      <Field id="newVaneSwingMode"
+	     type="menu">
+	<Label>Vane Swing Mode</Label>
+	<List class="self" method="getSupportedVaneSwingModes"/>
+      </Field>
+    </ConfigUI>
+  </Action>
 </Actions>

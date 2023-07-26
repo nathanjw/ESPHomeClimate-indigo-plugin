@@ -48,6 +48,15 @@ kFanESPSpeedMap = {ClimateFanMode.OFF     : "off",
                    }
 kFanIndigoSpeedMap = dict(zip(kFanESPSpeedMap.values(), kFanESPSpeedMap.keys()))
 
+# Mitsubishi heat pumps also have a controllable vane *angle*, not just a swing setting,
+# but ESPHome doesn't expose that currently.
+kSwingModeESPMap = {ClimateSwingMode.OFF        : "off",
+                    ClimateSwingMode.VERTICAL   : "vertical",
+                    ClimateSwingMode.HORIZONTAL : "horizontal",
+                    ClimateSwingMode.BOTH       : "both",
+                    }
+kSwingModeIndigoMap = dict(zip(kSwingModeESPMap.values(), kSwingModeESPMap.keys()))
+
 class DeviceInfo:
     """Class for information about a particular ESPHome device"""
     def __init__(self):
@@ -189,8 +198,25 @@ class Plugin(indigo.PluginBase):
                 f"Action config callback couldn't find target {targetId} in devices")
             supported_fan_speeds = kFanESPSpeedMap.keys()
         for (speed, speedstr) in kFanESPSpeedMap.items():
-            if speed in devinfo.supported_fan_speeds:
+            if speed in supported_fan_speeds:
                 optionlist.append((speedstr, speedstr.capitalize()))
+        return optionlist
+
+    # action config UI callback method
+    def getSupportedVaneSwingModes(self, filter="", valuesDict=None, typeId="", targetId=0):
+        self.logger.debug(
+            f"filter {filter}  valuesDict {valuesDict}, typeId {typeId}, targetId {targetId}")
+        devinfo = self.devices.get(targetId, None)
+        optionlist = []
+        if devinfo:
+            supported_swing_modes = devinfo.supported_swing_modes
+        else:
+            self.logger.warning(
+                f"Action config callback couldn't find target {targetId} in devices")
+            supported_swing_modes = kSwingModeESPMap.keys()
+        for (swing, swingstr) in kSwingModeESPMap.items():
+            if swing in supported_swing_modes:
+                optionlist.append((swingstr, swingstr.capitalize()))
         return optionlist
 
     # temperature map, handheld remote (F) to device (C)
@@ -250,8 +276,12 @@ class Plugin(indigo.PluginBase):
             addKvl(kvl, 'hvacOperationMode', newmode)
 
         newfanspeed = kFanESPSpeedMap.get(state.fan_mode, None)
-        if newfanspeed is not None:
+        if newfanspeed:
             addKvl(kvl, "fanSpeed", newfanspeed)
+
+        newswingmode = kSwingModeESPMap.get(state.swing_mode, None)
+        if newswingmode:
+            addKvl(kvl, "vaneSwingMode", newswingmode)
 
         # Indigo wants "fan mode" to be "always on" or "auto". That
         # doesn't quite track with how the minisplit works - it has a
@@ -462,6 +492,11 @@ class Plugin(indigo.PluginBase):
         dev = indigo.devices[action.deviceId]
         self.climateCommand(dev, fan_mode = action.props['newFanSpeed'])
 
+    # Action callback
+    def setVaneSwingMode(self, action):
+        dev = indigo.devices[action.deviceId]
+        self.climateCommand(dev, swing_mode = action.props['newVaneSwingMode'])
+
     def climateCommand(self, dev, **kwargs):
         self.logger.debug(f"climateCommand({kwargs})")
         # The Mitsubishi heatpump library -
@@ -476,12 +511,15 @@ class Plugin(indigo.PluginBase):
             kwargs['target_temperature'] = dev.states['setpointCool']
         if 'fan_mode' not in kwargs:
             kwargs['fan_mode'] = dev.states['fanSpeed']
+        if 'swing_mode' not in kwargs:
+            kwargs['swing_mode'] = dev.states['vaneSwingMode']
         if 'mode' not in kwargs:
             kwargs['mode'] = dev.states['hvacOperationMode']
 
         # Translate Indigo-world values to ESPHomeAPI values
         kwargs['target_temperature'] = self.maybeConvertToC(kwargs['target_temperature'])
         kwargs['fan_mode'] = kFanIndigoSpeedMap[kwargs['fan_mode']]
+        kwargs['swing_mode'] = kSwingModeIndigoMap[kwargs['swing_mode']]
         kwargs['mode'] = kHvacIndigoModeMap[kwargs['mode']]
 
         self.logger.debug(f"running api.climate_command({kwargs})")

@@ -46,11 +46,21 @@
 	<TriggerLabelPrefix>Fan Speed Changed to</TriggerLabelPrefix>
 	<ControlPageLabel>Current Fan Speed</ControlPageLabel>
       </State>
+      <State id="vaneSwingMode">
+	<ValueType>
+	  <List>
+	    <Option value="off">Off</Option>
+	    <Option value="vertical">Vertical</Option>
+	    <Option value="horizontal">Horizontal</Option>
+	    <Option value="both">Both</Option>
+	  </List>
+	</ValueType>
+	<TriggerLabel>Vane Swing Mode Changed</TriggerLabel>
+	<TriggerLabelPrefix>Vane Swing Mode Changed to</TriggerLabelPrefix>
+	<ControlPageLabel>Current Vane Swing Mode</ControlPageLabel>
+      </State>
     </States>
     <!-- TODO(njw):
-	 * handle heat/cool setpoints being the same
-	 * add the fan speed state
-	 * add the vane direction state
 	 * cope with the additional "dry" mode
     -->
   </Device>
