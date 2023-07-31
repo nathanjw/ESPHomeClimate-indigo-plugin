@@ -13,16 +13,16 @@
       </Field>
     </ConfigUI>
   </Action>
-  <Action id="setVaneSwingMode"
+  <Action id="setVerticalVaneMode"
 	  deviceFilter="self"
 	  uiPath="DeviceActions">
-    <Name>Set Vane Swing Mode</Name>
-    <CallbackMethod>setVaneSwingMode</CallbackMethod>
+    <Name>Set Vertical Vane Mode</Name>
+    <CallbackMethod>setVerticalVaneMode</CallbackMethod>
     <ConfigUI>
-      <Field id="newVaneSwingMode"
+      <Field id="newVerticalVaneMode"
 	     type="menu">
-	<Label>Vane Swing Mode</Label>
-	<List class="self" method="getSupportedVaneSwingModes"/>
+	<Label>Vertical Vane Mode</Label>
+	<List class="self" method="getVerticalVaneModes"/>
       </Field>
     </ConfigUI>
   </Action>

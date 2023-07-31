@@ -46,18 +46,21 @@
 	<TriggerLabelPrefix>Fan Speed Changed to</TriggerLabelPrefix>
 	<ControlPageLabel>Current Fan Speed</ControlPageLabel>
       </State>
-      <State id="vaneSwingMode">
+      <State id="verticalVaneMode">
 	<ValueType>
 	  <List>
-	    <Option value="off">Off</Option>
-	    <Option value="vertical">Vertical</Option>
-	    <Option value="horizontal">Horizontal</Option>
-	    <Option value="both">Both</Option>
+	    <Option value="auto">Auto</Option>
+	    <Option value="swing">Swing</Option>
+	    <Option value="up">Up</Option>
+	    <Option value="up_center">Up-Center</Option>
+	    <Option value="center">Center</Option>
+	    <Option value="down_center">Down-Center</Option>
+	    <Option value="down">Down</Option>
 	  </List>
 	</ValueType>
-	<TriggerLabel>Vane Swing Mode Changed</TriggerLabel>
-	<TriggerLabelPrefix>Vane Swing Mode Changed to</TriggerLabelPrefix>
-	<ControlPageLabel>Current Vane Swing Mode</ControlPageLabel>
+	<TriggerLabel>Vertical Vane Mode Changed</TriggerLabel>
+	<TriggerLabelPrefix>Vertical Vane Mode Changed to</TriggerLabelPrefix>
+	<ControlPageLabel>Current Vertical Vane Mode</ControlPageLabel>
       </State>
     </States>
     <!-- TODO(njw):

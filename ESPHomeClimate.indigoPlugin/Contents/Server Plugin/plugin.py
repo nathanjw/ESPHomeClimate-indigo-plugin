@@ -14,7 +14,7 @@ import aioesphomeapi
 import indigo
 import zeroconf
 
-from aioesphomeapi import ClimateMode, ClimateAction, ClimateFanMode, ClimateSwingMode
+from aioesphomeapi import ClimateMode, ClimateAction, ClimateFanMode
 kHvacModeESPMap ={ClimateMode.OFF       : indigo.kHvacMode.Off,
                   ClimateMode.HEAT_COOL : indigo.kHvacMode.HeatCool,
                   ClimateMode.COOL      : indigo.kHvacMode.Cool,
@@ -48,15 +48,6 @@ kFanSpeedESPMap = {ClimateFanMode.OFF     : "off",
                    }
 kFanSpeedIndigoMap = dict(zip(kFanSpeedESPMap.values(), kFanSpeedESPMap.keys()))
 
-# Mitsubishi heat pumps also have a controllable vane *angle*, not just a swing setting,
-# but ESPHome doesn't expose that currently.
-kSwingModeESPMap = {ClimateSwingMode.OFF        : "off",
-                    ClimateSwingMode.VERTICAL   : "vertical",
-                    ClimateSwingMode.HORIZONTAL : "horizontal",
-                    ClimateSwingMode.BOTH       : "both",
-                    }
-kSwingModeIndigoMap = dict(zip(kSwingModeESPMap.values(), kSwingModeESPMap.keys()))
-
 class DeviceInfo:
     """Class for information about a particular ESPHome device"""
     def __init__(self):
@@ -70,8 +61,11 @@ class DeviceInfo:
         self.supported_modes = None
         # List of ClimateFanModes that the device is reported to support
         self.supported_fan_speeds = None
-        # List of ClimateSwingModes that the device is reported to support
-        self.supported_swing_modes = None
+        # List of vertical vane modes that the device is reported to support
+        self.supported_vertical_vane_modes = None
+        # Integer, key of the Select sub-object in ESPhome updates that represents
+        # the vertical vane position
+        self.vertical_vane_key = None
 
 class Plugin(indigo.PluginBase):
     """Plugin for ESPHome devices doing climate control, such as Mitsubishi minisplit heads"""
@@ -202,22 +196,16 @@ class Plugin(indigo.PluginBase):
                 optionlist.append((speedstr, speedstr.capitalize()))
         return optionlist
 
-    # action config UI callback method
-    def getSupportedVaneSwingModes(self, filter="", valuesDict=None, typeId="", targetId=0):
+    # config UI callback method
+    def getVerticalVaneModes(self, filter="", valuesDict=None, typeId="", targetId=0):
         self.logger.debug(
             f"filter {filter}  valuesDict {valuesDict}, typeId {typeId}, targetId {targetId}")
         devinfo = self.devices.get(targetId, None)
-        optionlist = []
-        if devinfo:
-            supported_swing_modes = devinfo.supported_swing_modes
-        else:
+        if not devinfo:
             self.logger.warning(
                 f"Action config callback couldn't find target {targetId} in devices")
-            supported_swing_modes = kSwingModeESPMap.keys()
-        for (swing, swingstr) in kSwingModeESPMap.items():
-            if swing in supported_swing_modes:
-                optionlist.append((swingstr, swingstr.capitalize()))
-        return optionlist
+            return []
+        return [(mode, mode.capitalize()) for mode in devinfo.supported_vertical_vane_modes]
 
     # temperature map, handheld remote (F) to device (C)
     # Use this instead of the usual formula and rounding for consistency with the handheld UI.
@@ -253,8 +241,14 @@ class Plugin(indigo.PluginBase):
             return self.convertCtoF(deg)
         return deg
 
+    def addKvl(self, kvl, key, value, uiValue = None):
+        if uiValue:
+            kvl.append({'key':key, 'value':value, 'uiValue':uiValue})
+        else:
+            kvl.append({'key':key, 'value':value})
+
     def updateDeviceState(self, dev, state):
-        """Update Indigo's view of the world from an aioesphomeapi.ClimateState object"""
+        """Update Indigo's view of the device from an aioesphomeapi.ClimateState object"""
         # Sample state:
         # ClimateState(key=4057448159, mode=<ClimateMode.COOL: 2>,
         #              action=<ClimateAction.COOLING: 2>, current_temperature=25.0,
@@ -264,24 +258,15 @@ class Plugin(indigo.PluginBase):
         #              custom_fan_mode='', preset=<ClimatePreset.NONE: 0>, custom_preset='')
         self.logger.debug(f"updateDeviceState(): from ESPHome state {state}")
         kvl = []
-        def addKvl(kvl, key, value, uiValue = None):
-            if uiValue:
-                kvl.append({'key':key, 'value':value, 'uiValue':uiValue})
-            else:
-                kvl.append({'key':key, 'value':value})
 
         newmode = kHvacModeESPMap.get(state.mode, None)
         # Have to test explicitly against None because indigo.kHvacMode.Off is falsy.
         if newmode is not None:
-            addKvl(kvl, 'hvacOperationMode', newmode)
+            self.addKvl(kvl, 'hvacOperationMode', newmode)
 
         newfanspeed = kFanSpeedESPMap.get(state.fan_mode, None)
         if newfanspeed:
-            addKvl(kvl, "fanSpeed", newfanspeed)
-
-        newswingmode = kSwingModeESPMap.get(state.swing_mode, None)
-        if newswingmode:
-            addKvl(kvl, "vaneSwingMode", newswingmode)
+            self.addKvl(kvl, "fanSpeed", newfanspeed)
 
         # Indigo wants "fan mode" to be "always on" or "auto". That
         # doesn't quite track with how the minisplit works - it has a
@@ -293,35 +278,46 @@ class Plugin(indigo.PluginBase):
         # set to OFF or FAN_ONLY when the HVAC mode is off - but
         # that's mmore complicated.
         if state.mode == ClimateMode.FAN_ONLY:
-            addKvl(kvl, 'hvacFanMode', indigo.kFanMode.AlwaysOn)
+            self.addKvl(kvl, 'hvacFanMode', indigo.kFanMode.AlwaysOn)
         else:
-            addKvl(kvl, 'hvacFanMode', indigo.kFanMode.Auto)
+            self.addKvl(kvl, 'hvacFanMode', indigo.kFanMode.Auto)
 
-        addKvl(kvl, 'hvacCoolerIsOn', state.action == ClimateAction.COOLING)
-        addKvl(kvl, 'hvacHeaterIsOn', state.action == ClimateAction.HEATING)
-        addKvl(kvl, 'hvacDehumidifierIsOn', state.action == ClimateAction.DRYING)
-        addKvl(kvl, 'hvacFanIsOn', (state.action not in [ClimateAction.OFF, ClimateAction.IDLE]))
+        self.addKvl(kvl, 'hvacCoolerIsOn', state.action == ClimateAction.COOLING)
+        self.addKvl(kvl, 'hvacHeaterIsOn', state.action == ClimateAction.HEATING)
+        self.addKvl(kvl, 'hvacDehumidifierIsOn', state.action == ClimateAction.DRYING)
+        self.addKvl(kvl, 'hvacFanIsOn', (state.action not in [ClimateAction.OFF, ClimateAction.IDLE]))
         # from state.target_temperature
         # ESPHomeApi temperatures are degrees C.
         if not math.isnan(state.target_temperature):
             settemp = self.maybeConvertToF(state.target_temperature)
-            addKvl(kvl, 'setpointCool', settemp)
-            addKvl(kvl, 'setpointHeat', settemp)
+            self.addKvl(kvl, 'setpointCool', settemp)
+            self.addKvl(kvl, 'setpointHeat', settemp)
         # from state.current_temperature
         if not math.isnan(state.current_temperature):
             curtemp = self.maybeConvertToF(state.current_temperature)
-            addKvl(kvl, 'temperatureInput1', curtemp)
+            self.addKvl(kvl, 'temperatureInput1', curtemp)
         else:
             self.logger.warning("No reported temperature - disconnected?")
-        # unhandled: state.swing_mode
         self.logger.debug(f"Updating Indigo states: {kvl}")
         dev.updateStatesOnServer(kvl)
+
+    def updateDeviceVaneState(self, dev, state):
+        """Update Indigo's view of the vane state of the device from an aioesphomeapi.SelectState object"""
+        # Sample state:
+        # SelectState(key=1072139916, state='center', missing_state=False)
+        self.logger.debug(f"updateDeviceVaneState(): from ESPHome state {state}")
+        kvl = []
+        self.addKvl(kvl, 'verticalVaneMode', state.state)
+        self.logger.debug(f"Updating Indigo states: {kvl}")
+        dev.updateStatesOnServer(kvl)        
 
     def changeCallback(self, dev, state):
         # If it's the climate state being updated, update Indigo's information.
         devinfo = self.devices[dev.id]
         if state.key == devinfo.climate_key:
             self.updateDeviceState(dev, state)
+        elif state.key == devinfo.vertical_vane_key:
+            self.updateDeviceVaneState(dev, state)
 
     # Indigo plugin method
     def deviceStartComm(self, dev):
@@ -360,19 +356,33 @@ class Plugin(indigo.PluginBase):
         devinfo = self.devices[dev.id]
         api = devinfo.api
         [entities, _] = await api.list_entities_services()
-        # Find "Climate" entity
+        # Find entity objects we're going to use
         climate_key = None
+        vertical_vane_key = None
         for entity in entities:
+            self.logger.debug(f"Entity {entity}")
             if isinstance(entity, aioesphomeapi.model.ClimateInfo):
+                if climate_key:
+                    self.logger.warning("More than one ClimateInfo found! Only using the first.")
+                    continue
                 climate_key = entity.key
                 devinfo.supported_modes = entity.supported_modes
                 devinfo.supported_fan_speeds = entity.supported_fan_modes
-                devinfo.supported_swing_modes = entity.supported_swing_modes
-                break
+            if (isinstance(entity, aioesphomeapi.model.SelectInfo)
+                and 'down' in entity.options):
+                if vertical_vane_key:
+                    self.logger.warning(
+                        "More than one SelectInfo found with 'down' option! Only using the first.")
+                    continue
+                vertical_vane_key = entity.key
+                devinfo.supported_vertical_vane_modes = entity.options
         if not climate_key:
             raise RuntimeError("No climate entity found on ESPHome device")
         self.logger.debug(f"Found climate key {climate_key}")
         devinfo.climate_key = climate_key
+        if vertical_vane_key:
+            self.logger.debug(f"Found vertical vane key {vertical_vane_key}")
+            devinfo.vertical_vane_key = vertical_vane_key
         # maybe check capabilities here?
         new_props = dev.pluginProps
         new_props["ShowCoolHeatEquipmentStateUI"] = True
@@ -493,9 +503,9 @@ class Plugin(indigo.PluginBase):
         self.climateCommand(dev, fan_mode = action.props['newFanSpeed'])
 
     # Action callback
-    def setVaneSwingMode(self, action):
+    def setVerticalVaneMode(self, action):
         dev = indigo.devices[action.deviceId]
-        self.climateCommand(dev, swing_mode = action.props['newVaneSwingMode'])
+        self.climateCommand(dev, vertical_vane_mode = action.props['newVerticalVaneMode'])
 
     def climateCommand(self, dev, **kwargs):
         self.logger.debug(f"climateCommand({kwargs})")
@@ -511,24 +521,33 @@ class Plugin(indigo.PluginBase):
             kwargs['target_temperature'] = dev.states['setpointCool']
         if 'fan_mode' not in kwargs:
             kwargs['fan_mode'] = dev.states['fanSpeed']
-        if 'swing_mode' not in kwargs:
-            kwargs['swing_mode'] = dev.states['vaneSwingMode']
+        if 'vertical_vane_mode' not in kwargs:
+            kwargs['vertical_vane_mode'] = dev.states['verticalVaneMode']
         if 'mode' not in kwargs:
             kwargs['mode'] = dev.states['hvacOperationMode']
 
         # Translate Indigo-world values to ESPHomeAPI values
         kwargs['target_temperature'] = self.maybeConvertToC(kwargs['target_temperature'])
         kwargs['fan_mode'] = kFanSpeedIndigoMap[kwargs['fan_mode']]
-        kwargs['swing_mode'] = kSwingModeIndigoMap[kwargs['swing_mode']]
+        vertical_vane_mode = kwargs['vertical_vane_mode']
+        del kwargs['vertical_vane_mode']
         kwargs['mode'] = kHvacModeIndigoMap[kwargs['mode']]
 
         self.logger.debug(f"running api.climate_command({kwargs})")
         devinfo = self.devices[dev.id]
         api = devinfo.api
-        future = asyncio.run_coroutine_threadsafe(
+        future1 = asyncio.run_coroutine_threadsafe(
             api.climate_command(key = devinfo.climate_key, **kwargs),
             self.loop)
+        self.logger.debug(f"running api.select_command({vertical_vane_mode})")
+        future2 = asyncio.run_coroutine_threadsafe(
+            api.select_command(key = devinfo.vertical_vane_key, state = vertical_vane_mode),
+            self.loop)
         try:
-            future.result()
+            future1.result()
+        except Exception as exc:
+            self.logger.exception(exc)
+        try:
+            future2.result()
         except Exception as exc:
             self.logger.exception(exc)
