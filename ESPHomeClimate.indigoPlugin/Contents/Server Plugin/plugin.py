@@ -243,13 +243,15 @@ class Plugin(indigo.PluginBase):
             return self.convertCtoF(deg)
         return deg
 
-    def addKvl(self, kvl, key, value, uiValue = None):
+    @staticmethod
+    def addKvl(kvl, key, value, uiValue = None):
         if uiValue:
             kvl.append({'key':key, 'value':value, 'uiValue':uiValue})
         else:
             kvl.append({'key':key, 'value':value})
 
-    def getKvl(self, kvl, key, defaultValue = None):
+    @staticmethod
+    def getKvl(kvl, key, defaultValue = None):
         for dict in kvl:
             if dict['key'] == key:
                 return dict['value']
