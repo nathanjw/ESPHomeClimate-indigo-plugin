@@ -66,6 +66,8 @@ class DeviceInfo:
         # Integer, key of the Select sub-object in ESPhome updates that represents
         # the vertical vane position
         self.vertical_vane_key = None
+        # Future of a climate command in progress, so it can be cancelled if another is being sent.
+        self.command_future = None
 
 class Plugin(indigo.PluginBase):
     """Plugin for ESPHome devices doing climate control, such as Mitsubishi minisplit heads"""
@@ -507,6 +509,14 @@ class Plugin(indigo.PluginBase):
         dev = indigo.devices[action.deviceId]
         self.climateCommand(dev, vertical_vane_mode = action.props['newVerticalVaneMode'])
 
+    async def climateTask(self, devinfo, climate_kwargs, select_kwargs):
+        self.logger.debug("climateTask() sleeping to allow cancellation.")
+        await asyncio.sleep(1)
+        self.logger.debug(f"climateTask() slept. Calling api.climate_command('{climate_kwargs}')")
+        await devinfo.api.climate_command(key = devinfo.climate_key, **climate_kwargs)
+        self.logger.debug(f"climateTask() Calling api.select_command('{select_kwargs}')")
+        await devinfo.api.select_command(key = devinfo.vertical_vane_key, **select_kwargs)
+
     def climateCommand(self, dev, **kwargs):
         self.logger.debug(f"climateCommand({kwargs})")
         # The Mitsubishi heatpump library -
@@ -517,14 +527,19 @@ class Plugin(indigo.PluginBase):
         # been used to adjust the settings. Since this plugin gets updated
         # (by that same heatpump library!) after such updates, it's best to
         # set all the states we know about.
-        if 'target_temperature' not in kwargs:
-            kwargs['target_temperature'] = dev.states['setpointCool']
-        if 'fan_mode' not in kwargs:
-            kwargs['fan_mode'] = dev.states['fanSpeed']
-        if 'vertical_vane_mode' not in kwargs:
-            kwargs['vertical_vane_mode'] = dev.states['verticalVaneMode']
-        if 'mode' not in kwargs:
-            kwargs['mode'] = dev.states['hvacOperationMode']
+
+        def adjust(kvl, kwargs, indigoName, espName):
+            if espName in kwargs:
+                self.addKvl(kvl, indigoName, kwargs[espName])
+            else:
+                kwargs[espName] = dev.states[indigoName]
+        kvl = []
+        adjust(kvl, kwargs, 'setpointCool', 'target_temperature')
+        adjust(kvl, kwargs, 'fanSpeed', 'fanMode')
+        adjust(kvl, kwargs, 'verticalVaneMode', 'vertical_vane_mode')
+        adjust(kvl, kwargs, 'hvacOperationMode', 'mode')
+        self.logger.debug(f"Updating Indigo states: {kvl}")
+        dev.updateStatesOnServer(kvl)
 
         # Translate Indigo-world values to ESPHomeAPI values
         kwargs['target_temperature'] = self.maybeConvertToC(kwargs['target_temperature'])
@@ -535,19 +550,14 @@ class Plugin(indigo.PluginBase):
 
         self.logger.debug(f"running api.climate_command({kwargs})")
         devinfo = self.devices[dev.id]
-        api = devinfo.api
-        future1 = asyncio.run_coroutine_threadsafe(
-            api.climate_command(key = devinfo.climate_key, **kwargs),
+        # The ESPHome/HeatPump system doesn't like a lot of commands
+        # in sequence. It is after all transmitting them over a
+        # 2400bps serial link. To prevent a flood of commands if
+        # there's a sequence of actions or if a user clicks an up/down
+        # button a bunch, cancel any pending climate command (which
+        # will wait for a second to allow this to happen).
+        if devinfo.command_future:
+            devinfo.command_future.cancel()
+        devinfo.command_future = asyncio.run_coroutine_threadsafe(
+            self.climateTask(devinfo, kwargs, {'state' : vertical_vane_mode}),
             self.loop)
-        self.logger.debug(f"running api.select_command({vertical_vane_mode})")
-        future2 = asyncio.run_coroutine_threadsafe(
-            api.select_command(key = devinfo.vertical_vane_key, state = vertical_vane_mode),
-            self.loop)
-        try:
-            future1.result()
-        except Exception as exc:
-            self.logger.exception(exc)
-        try:
-            future2.result()
-        except Exception as exc:
-            self.logger.exception(exc)
