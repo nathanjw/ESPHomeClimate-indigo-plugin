@@ -249,6 +249,12 @@ class Plugin(indigo.PluginBase):
         else:
             kvl.append({'key':key, 'value':value})
 
+    def getKvl(self, kvl, key, defaultValue = None):
+        for dict in kvl:
+            if dict['key'] == key:
+                return dict['value']
+        return defaultValue
+
     def updateDeviceState(self, dev, state):
         """Update Indigo's view of the device from an aioesphomeapi.ClimateState object"""
         # Sample state:
@@ -535,9 +541,12 @@ class Plugin(indigo.PluginBase):
                 kwargs[espName] = dev.states[indigoName]
         kvl = []
         adjust(kvl, kwargs, 'setpointCool', 'target_temperature')
-        adjust(kvl, kwargs, 'fanSpeed', 'fanMode')
+        adjust(kvl, kwargs, 'fanSpeed', 'fan_mode')
         adjust(kvl, kwargs, 'verticalVaneMode', 'vertical_vane_mode')
         adjust(kvl, kwargs, 'hvacOperationMode', 'mode')
+        setpointCool = self.getKvl(kvl, 'setpointCool')
+        if setpointCool:
+            self.addKvl(kvl, 'setpointHeat', setpointCool)
         self.logger.debug(f"Updating Indigo states: {kvl}")
         dev.updateStatesOnServer(kvl)
 
